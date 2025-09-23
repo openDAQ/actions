@@ -64,44 +64,30 @@ runs:
       id: validate-framework-version
       shell: bash
       env:
-        VERSION: ${{ steps.parse-pattern.outputs.version || intputs.version }}
+        PACKAGE_VERSION: ${{ steps.parse-pattern.outputs.version || intputs.version }}
       run: |
-        version_name=
-
-        if [[ $VERSION == "latest"]]; then
-          version_name='latest'
-        elif [[ "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          version_name="${VERSION#v}"
-        else
-          echo "❌ Invalid version format: $VERSION"
-          cat <<EOF
-          💡 Hint: Use either of input arguments to resolve a particular framework version:
-              - pattern="opendaq-X.XX.X-*.*"
-              - version="vX.XX.X"
-
-          💡 Hint: Use either of input arguments to resolve the latest framework version automatically:
-              - pattern="opendaq-*-*.*"
-              - version=latest (or leave it empty)
-          EOF
+        version=$PACKAGE_VERSION
+        if [[ -n "$version" && "$version" != "latest" && ! "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "❌ Invalid version format: $VERSION" > &2
           exit 1
         fi
 
-        echo "version-name=$version_name" >> "$GITHUB_OUTPUT"
+        echo "version-name=${version#v}" >> "$GITHUB_OUTPUT"
 
     - name: Resolve version
       id: resolve-version
       shell: bash
       env:
-        VALID_VERSION_NAME: ${{ validate-framework-version.outputs.version-name || 'latest' }}
+        PACKAGE_VERSION: ${{ validate-framework-version.outputs.version-name || 'latest' }}
       run: |
         version=
         tag=
         
-        if [[ "$VALID_VERSION_NAME" == "latest" ]]; then
+        if [[ "$PACKAGE_VERSION" == "latest" ]]; then
           tag=$(gh release view "latest" --repo openDAQ/openDAQ --json tagName -q '.tagName')
           version="${tag#v}"
         else
-          version="${VALID_VERSION_NAME#v}"
+          version="${PACKAGE_VERSION#v}"
           tag="v$version"
         fi
 
