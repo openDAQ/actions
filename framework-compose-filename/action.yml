@@ -291,16 +291,6 @@ runs:
         echo "version-patch=${patch}" >> "$GITHUB_OUTPUT"
         echo "platform=${platform}" >> "$GITHUB_OUTPUT"
         echo "packaging=${packaging}" >> "$GITHUB_OUTPUT"
-        
-        # # Set environment variables for GitHub outputs
-        # echo "RESOLVED_FILENAME=${filename}" >> "$GITHUB_ENV"
-        # echo "RESOLVED_EXTENSION=${extension}" >> "$GITHUB_ENV"
-        # echo "RESOLVED_VERSION=${tagged_version}" >> "$GITHUB_ENV"
-        # echo "RESOLVED_MAJOR=${major}" >> "$GITHUB_ENV"
-        # echo "RESOLVED_MINOR=${minor}" >> "$GITHUB_ENV"
-        # echo "RESOLVED_PATCH=${patch}" >> "$GITHUB_ENV"
-        # echo "RESOLVED_PLATFORM=${platform}" >> "$GITHUB_ENV"
-        # echo "RESOLVED_PACKAGING=${packaging}" >> "$GITHUB_ENV"
 
     - name: Display resolved results
       shell: bash

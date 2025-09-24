@@ -1,14 +1,8 @@
-name: "Test Framework Compose Filename - Shared"
+name: "Test framework compose filename action"
 
 on:
   workflow_call:
   workflow_dispatch:
-    # inputs:
-    #   test-only-ubuntu:
-    #     description: "Test only Ubuntu (skip Windows and macOS for act testing)"
-    #     type: boolean
-    #     required: false
-    #     default: false
 
 jobs:
   test-action:
@@ -19,10 +13,6 @@ jobs:
             expected-platform-alias: "ubuntu22.04-x86_64"
             expected-packaging: "DEB"
             expected-extension: "deb"
-          # - os: ubuntu-24.04
-          #   expected-platform-alias: "ubuntu24.04-x86_64"
-          #   expected-packaging: "DEB"
-          #   expected-extension: "deb"
           - os: windows-latest
             expected-platform-alias: "win64"
             expected-packaging: "NSIS"
@@ -44,19 +34,6 @@ jobs:
       - name: Test framework compose filename with default arguments
         id: framework-compose-filename-default-args
         uses: ./framework-compose-filename
-
-      # TODO: Remove debug step:
-      - name: Debug framework compose filename step
-        run: |
-          echo "Step outcome: ${{ steps.framework-compose-filename-default-args.outcome }}"
-          echo "Step conclusion: ${{ steps.framework-compose-filename-default-args.conclusion }}"
-          echo "Raw outputs:"
-          echo "  filename: '${{ steps.framework-compose-filename-default-args.outputs.filename }}'"
-          echo "  version: '${{ steps.framework-compose-filename-default-args.outputs.version }}'"
-          echo "  platform: '${{ steps.framework-compose-filename-default-args.outputs.platform }}'"
-          echo "  extension: '${{ steps.framework-compose-filename-default-args.outputs.extension }}'"
-          echo "  packaging: '${{ steps.framework-compose-filename-default-args.outputs.packaging }}'"
-
 
       - name: Verify framework compose filename with default arguments
         shell: bash
