@@ -7,7 +7,7 @@ inputs:
     required: false
     default: "opendaq-*-*.*"
   version:
-    description: "Version or git tag (e.g. '3.20.4', 'v3.20.4' or 'latest', used when pattern has * for version)"
+    description: "Version or git tag (e.g. '3.20.4', 'v3.30.0' or 'latest', used when pattern has * for version)"
     required: false
     default: "latest"
   platform:
@@ -17,15 +17,7 @@ inputs:
     description: "CPack generator (DEB/NSIS/TARGZ/ZIP, used when pattern has * for extension)"
     required: false
   token:
-    description: |
-      Personal access token (PAT) used to fetch release information from GitHub API.
-      
-      We recommend using a service account with the least permissions necessary.
-      Also when generating a new PAT, select the least scopes necessary.
-      
-      Required scopes: 'repo' (for private repositories), 'read:packages' (for releases)
-      
-      [Learn more about creating and using encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+    description: Personal access token (PAT) used to fetch release information from GitHub API.
     required: false
     default: ${{ github.token }}
 
@@ -55,10 +47,10 @@ runs:
       run: |
         echo "🔍 Input Parameters:"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "Pattern: '${{ inputs.pattern }}'"
-        echo "Version: '${{ inputs.version }}'"
-        echo "Platform: '${{ inputs.platform }}'"
-        echo "Packaging: '${{ inputs.packaging }}'"
+        echo "Pattern: '${{ inputs.pattern }}' || '***NOT SET***, assume default: opendaq-*-*.*'"
+        echo "Version: '${{ inputs.version }}' || '***NOT SET***'"
+        echo "Platform: '${{ inputs.platform }}' || '***NOT SET***'"
+        echo "Packaging: '${{ inputs.packaging }}' || '***NOT SET***'"
         echo "Token: ${{ inputs.token && '***SET***' || '***NOT SET***' }}"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
