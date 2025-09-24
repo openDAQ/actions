@@ -24,20 +24,28 @@ inputs:
 outputs:
   filename:
     description: "Resolved artifact filename"
+    value: ${{ steps.parse-and-resolve.outputs.filename }}
   extension:
     description: "Resolved file extension"
+    value: ${{ steps.parse-and-resolve.outputs.extension }}
   version:
     description: "Resolved version (always with 'v' prefix, e.g. v3.20.4)"
+    value: ${{ steps.parse-and-resolve.outputs.version }}
   version-major:
     description: "Major version component (e.g. 3)"
+    value: ${{ steps.parse-and-resolve.outputs.version-major }}
   version-minor:
     description: "Minor version component (e.g. 20)"
+    value: ${{ steps.parse-and-resolve.outputs.version-minor }}
   version-patch:
     description: "Patch version component (e.g. 4)"
+    value: ${{ steps.parse-and-resolve.outputs.version-patch }}
   platform:
     description: "Resolved platform alias"
+    value: ${{ steps.parse-and-resolve.outputs.platform }}
   packaging:
     description: "Resolved CPack generator"
+    value: ${{ steps.parse-and-resolve.outputs.packaging }}
 
 runs:
   using: "composite"
@@ -47,10 +55,10 @@ runs:
       run: |
         echo "🔍 Input Parameters:"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "Pattern: '${{ inputs.pattern }}' || '***NOT SET***, assume default: opendaq-*-*.*'"
-        echo "Version: '${{ inputs.version }}' || '***NOT SET***'"
-        echo "Platform: '${{ inputs.platform }}' || '***NOT SET***'"
-        echo "Packaging: '${{ inputs.packaging }}' || '***NOT SET***'"
+        echo "Pattern: ${{ inputs.pattern || '***NOT SET***, assume default: opendaq-*-*.*' }}"
+        echo "Version: ${{ inputs.version || '***NOT SET***' }}"
+        echo "Platform: ${{ inputs.platform || '***NOT SET***' }}"
+        echo "Packaging: ${{ inputs.packaging || '***NOT SET***' }}"
         echo "Token: ${{ inputs.token && '***SET***' || '***NOT SET***' }}"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -85,8 +93,15 @@ runs:
         temp="${pattern#opendaq-}"
         pattern_version="${temp%%-*}"
         temp="${temp#*-}"
-        pattern_platform="${temp%.*}"
-        pattern_extension="${pattern##*.}"
+        
+        # Handle tar.gz extension specially
+        if [[ "$temp" == *.tar.gz ]]; then
+          pattern_platform="${temp%.tar.gz}"
+          pattern_extension="tar.gz"
+        else
+          pattern_platform="${temp%.*}"
+          pattern_extension="${temp##*.}"
+        fi
         
         echo "📋 Pattern components:"
         echo "  Version: '$pattern_version'"
@@ -225,7 +240,8 @@ runs:
           # Extension is not specified in pattern
           if [[ -n "$input_packaging" ]]; then
             # Use and validate packaging to determine extension
-            case "${input_packaging^^}" in  # Convert to uppercase
+            # POSIX-compatible upper-case (works on macOS bash 3.2)
+            case "$(printf '%s' "$input_packaging" | tr '[:lower:]' '[:upper:]')" in
               DEB) extension="deb"; packaging="DEB" ;;
               NSIS) extension="exe"; packaging="NSIS" ;;
               TARGZ|TGZ) extension="tar.gz"; packaging="TARGZ" ;;
@@ -276,15 +292,15 @@ runs:
         echo "platform=${platform}" >> "$GITHUB_OUTPUT"
         echo "packaging=${packaging}" >> "$GITHUB_OUTPUT"
         
-        # Set environment variables for display step
-        echo "RESOLVED_FILENAME=${filename}" >> "$GITHUB_ENV"
-        echo "RESOLVED_EXTENSION=${extension}" >> "$GITHUB_ENV"
-        echo "RESOLVED_VERSION=${tagged_version}" >> "$GITHUB_ENV"
-        echo "RESOLVED_MAJOR=${major}" >> "$GITHUB_ENV"
-        echo "RESOLVED_MINOR=${minor}" >> "$GITHUB_ENV"
-        echo "RESOLVED_PATCH=${patch}" >> "$GITHUB_ENV"
-        echo "RESOLVED_PLATFORM=${platform}" >> "$GITHUB_ENV"
-        echo "RESOLVED_PACKAGING=${packaging}" >> "$GITHUB_ENV"
+        # # Set environment variables for GitHub outputs
+        # echo "RESOLVED_FILENAME=${filename}" >> "$GITHUB_ENV"
+        # echo "RESOLVED_EXTENSION=${extension}" >> "$GITHUB_ENV"
+        # echo "RESOLVED_VERSION=${tagged_version}" >> "$GITHUB_ENV"
+        # echo "RESOLVED_MAJOR=${major}" >> "$GITHUB_ENV"
+        # echo "RESOLVED_MINOR=${minor}" >> "$GITHUB_ENV"
+        # echo "RESOLVED_PATCH=${patch}" >> "$GITHUB_ENV"
+        # echo "RESOLVED_PLATFORM=${platform}" >> "$GITHUB_ENV"
+        # echo "RESOLVED_PACKAGING=${packaging}" >> "$GITHUB_ENV"
 
     - name: Display resolved results
       shell: bash
@@ -292,12 +308,12 @@ runs:
         echo ""
         echo "🎯 Final Results:"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "📁 Filename: $RESOLVED_FILENAME"
-        echo "📦 Extension: $RESOLVED_EXTENSION"
-        echo "🏷️  Version: $RESOLVED_VERSION"
-        echo "   └─ Major: $RESOLVED_MAJOR"
-        echo "   └─ Minor: $RESOLVED_MINOR"
-        echo "   └─ Patch: $RESOLVED_PATCH"
-        echo "🖥️  Platform: $RESOLVED_PLATFORM"
-        echo "🔧 Packaging: $RESOLVED_PACKAGING"
+        echo "📁 Filename: ${{ steps.parse-and-resolve.outputs.filename }}"
+        echo "📦 Extension: ${{ steps.parse-and-resolve.outputs.extension }}"
+        echo "🏷️  Version: ${{ steps.parse-and-resolve.outputs.version }}"
+        echo "   └─ Major: ${{ steps.parse-and-resolve.outputs.version-major }}"
+        echo "   └─ Minor: ${{ steps.parse-and-resolve.outputs.version-minor }}"
+        echo "   └─ Patch: ${{ steps.parse-and-resolve.outputs.version-patch }}"
+        echo "🖥️  Platform: ${{ steps.parse-and-resolve.outputs.platform }}"
+        echo "🔧 Packaging: ${{ steps.parse-and-resolve.outputs.packaging }}"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

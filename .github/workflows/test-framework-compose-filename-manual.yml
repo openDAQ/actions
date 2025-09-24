@@ -52,3 +52,7 @@ jobs:
           version: ${{ inputs.version }}
           platform: ${{ inputs.platform }}
           packaging: ${{ inputs.packaging }}
+
+      - name: Display
+        run: |
+          echo "version -> ${{ steps.call-framework-compose-filename.outputs.version }}"

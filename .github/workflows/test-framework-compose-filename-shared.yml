@@ -15,18 +15,22 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             expected-platform-alias: "ubuntu22.04-x86_64"
             expected-packaging: "DEB"
             expected-extension: "deb"
+          # - os: ubuntu-24.04
+          #   expected-platform-alias: "ubuntu24.04-x86_64"
+          #   expected-packaging: "DEB"
+          #   expected-extension: "deb"
           # - os: windows-latest
           #   expected-platform-alias: "win64"
           #   expected-packaging: "NSIS"
           #   expected-extension: "exe"
-          # - os: macos-latest
-          #   expected-platform-alias: "macos13-x86_64"
-          #   expected-packaging: "TARGZ"
-          #   expected-extension: "tar.gz"
+          - os: macos-13
+            expected-platform-alias: "macos13-x86_64"
+            expected-packaging: "TARGZ"
+            expected-extension: "tar.gz"
 
     runs-on: ${{ matrix.os }}
 
