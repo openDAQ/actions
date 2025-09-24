@@ -9,6 +9,7 @@ A collection of reusable GitHub Actions for working with the [openDAQ Framework]
 
 > TODO: put an available actions list here:
 
+- [![tests](https://github.com/openDAQ/actions/workflows/test-framework-compose-filename-shared.yml/badge.svg)](https://github.com/openDAQ/actions/workflows/test-framework-compose-filename-shared.yml) [framework-compose-filename](./framework-compose-filename/README.md) 
 - [ ] framework-download-artifact
 - [ ] framework-download-release
 - [ ] framework-install-package
