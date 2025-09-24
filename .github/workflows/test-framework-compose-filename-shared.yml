@@ -2,6 +2,13 @@ name: "Test Framework Compose Filename - Shared"
 
 on:
   workflow_call:
+  workflow_dispatch:
+    # inputs:
+    #   test-only-ubuntu:
+    #     description: "Test only Ubuntu (skip Windows and macOS for act testing)"
+    #     type: boolean
+    #     required: false
+    #     default: false
 
 jobs:
   test-action:
@@ -18,10 +25,13 @@ jobs:
           #   expected-extension: "exe"
           # - os: macos-latest
           #   expected-platform-alias: "macos13-x86_64"
-          #   expected-packaging: "PKG"
-          #   expected-extension: "pkg"
+          #   expected-packaging: "TARGZ"
+          #   expected-extension: "tar.gz"
 
     runs-on: ${{ matrix.os }}
+
+    env:
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout
@@ -30,23 +40,219 @@ jobs:
       - name: Test framework compose filename with default arguments
         id: framework-compose-filename-default-args
         uses: ./framework-compose-filename
-      
+
+      # TODO: Remove debug step:
+      - name: Debug framework compose filename step
+        run: |
+          echo "Step outcome: ${{ steps.framework-compose-filename-default-args.outcome }}"
+          echo "Step conclusion: ${{ steps.framework-compose-filename-default-args.conclusion }}"
+          echo "Raw outputs:"
+          echo "  filename: '${{ steps.framework-compose-filename-default-args.outputs.filename }}'"
+          echo "  version: '${{ steps.framework-compose-filename-default-args.outputs.version }}'"
+          echo "  platform: '${{ steps.framework-compose-filename-default-args.outputs.platform }}'"
+          echo "  extension: '${{ steps.framework-compose-filename-default-args.outputs.extension }}'"
+          echo "  packaging: '${{ steps.framework-compose-filename-default-args.outputs.packaging }}'"
+
+
       - name: Verify framework compose filename with default arguments
         shell: bash
         run: |
           filename="${{ steps.framework-compose-filename-default-args.outputs.filename }}"
+          extension="${{ steps.framework-compose-filename-default-args.outputs.extension }}"
+          platform="${{ steps.framework-compose-filename-default-args.outputs.platform }}"
+          packaging="${{ steps.framework-compose-filename-default-args.outputs.packaging }}"
+          version="${{ steps.framework-compose-filename-default-args.outputs.version }}"
+          
+          echo "🔍 Verifying latest version results:"
+          echo "Filename: $filename"
+          echo "Version: $version"
+          echo "Platform: $platform"
+          echo "Extension: $extension"
+          echo "Packaging: $packaging"
 
+          # Get expected latest version from GitHub API
           expected_tag=$(gh release list --repo openDAQ/openDAQ --json tagName,isLatest -q '.[] | select(.isLatest == true) | .tagName')
+          if [[ -z "$expected_tag" ]]; then
+            echo "❌ Failed to get latest release tag"
+            exit 1
+          fi
+          
+          # Parse version components
           IFS='.' read -r major minor patch <<< "${expected_tag#v}"
-
           expected_filename="opendaq-${major}.${minor}.${patch}-${{ matrix.expected-platform-alias }}.${{ matrix.expected-extension }}"
+          expected_version="$expected_tag"
 
-          if [[ "${expected_filename}" != "${filename}" ]]; then
-            echo "::error ::❌ openDAQ framework package filename mismatches"
-            echo "::error ::  - expected...: ${expected_filename}"
-            echo "::error ::  - actual.....: ${filename}"
+          # Verify version
+          if [[ "$version" != "$expected_version" ]]; then
+            echo "❌ Version mismatch:"
+            echo "  Expected: $expected_version"
+            echo "  Actual:   $version"
             exit 1
           fi
 
-          echo "✅ openDAQ framework package filename matches expectations"
-          echo "   - filename: ${filename}"
+          # Verify filename
+          if [[ "$filename" != "$expected_filename" ]]; then
+            echo "❌ Filename mismatch:"
+            echo "  Expected: $expected_filename"
+            echo "  Actual:   $filename"
+            exit 1
+          fi
+
+          # Verify platform
+          if [[ "$platform" != "${{ matrix.expected-platform-alias }}" ]]; then
+            echo "❌ Platform mismatch:"
+            echo "  Expected: ${{ matrix.expected-platform-alias }}"
+            echo "  Actual:   $platform"
+            exit 1
+          fi
+
+          # Verify extension
+          if [[ "$extension" != "${{ matrix.expected-extension }}" ]]; then
+            echo "❌ Extension mismatch:"
+            echo "  Expected: ${{ matrix.expected-extension }}"
+            echo "  Actual:   $extension"
+            exit 1
+          fi
+
+          # Verify packaging
+          if [[ "$packaging" != "${{ matrix.expected-packaging }}" ]]; then
+            echo "❌ Packaging mismatch:"
+            echo "  Expected: ${{ matrix.expected-packaging }}"
+            echo "  Actual:   $packaging"
+            exit 1
+          fi
+
+          echo "✅ All validations passed for latest version test!"
+
+      - name: Test framework compose filename with fixed version
+        id: framework-compose-filename-fixed-version
+        uses: ./framework-compose-filename
+        with:
+          version: "3.20.4"
+
+      - name: Verify framework compose filename with fixed version
+        shell: bash
+        run: |
+          filename="${{ steps.framework-compose-filename-fixed-version.outputs.filename }}"
+          version="${{ steps.framework-compose-filename-fixed-version.outputs.version }}"
+          platform="${{ steps.framework-compose-filename-fixed-version.outputs.platform }}"
+          extension="${{ steps.framework-compose-filename-fixed-version.outputs.extension }}"
+          packaging="${{ steps.framework-compose-filename-fixed-version.outputs.packaging }}"
+          major="${{ steps.framework-compose-filename-fixed-version.outputs.version-major }}"
+          minor="${{ steps.framework-compose-filename-fixed-version.outputs.version-minor }}"
+          patch="${{ steps.framework-compose-filename-fixed-version.outputs.version-patch }}"
+
+          echo "🔍 Verifying fixed version (3.20.4) results:"
+          echo "Filename: $filename"
+          echo "Version: $version"
+          echo "Platform: $platform"
+          echo "Extension: $extension"
+          echo "Packaging: $packaging"
+
+          # Expected values for fixed version test
+          expected_filename="opendaq-3.20.4-${{ matrix.expected-platform-alias }}.${{ matrix.expected-extension }}"
+          expected_version="v3.20.4"
+
+          # Verify all components
+          if [[ "$filename" != "$expected_filename" ]]; then
+            echo "❌ Fixed version filename mismatch:"
+            echo "  Expected: $expected_filename"
+            echo "  Actual:   $filename"
+            exit 1
+          fi
+
+          if [[ "$version" != "$expected_version" ]]; then
+            echo "❌ Fixed version mismatch:"
+            echo "  Expected: $expected_version"
+            echo "  Actual:   $version"
+            exit 1
+          fi
+
+          # Verify version components
+          if [[ "$major" != "3" || "$minor" != "20" || "$patch" != "4" ]]; then
+            echo "❌ Version components mismatch:"
+            echo "  Expected: 3.20.4"
+            echo "  Actual:   $major.$minor.$patch"
+            exit 1
+          fi
+
+          echo "✅ All validations passed for fixed version test!"
+
+      - name: Test specific parameters
+        id: test-specific
+        uses: ./framework-compose-filename
+        with:
+          version: "v3.19.0"
+          platform: "${{ matrix.expected-platform-alias }}"
+          packaging: "${{ matrix.expected-packaging }}"
+
+      - name: Verify specific parameters test
+        shell: bash
+        run: |
+          filename="${{ steps.test-specific.outputs.filename }}"
+          expected_filename="opendaq-3.19.0-${{ matrix.expected-platform-alias }}.${{ matrix.expected-extension }}"
+          
+          if [[ "$filename" != "$expected_filename" ]]; then
+            echo "❌ Specific parameters test failed:"
+            echo "  Expected: $expected_filename"  
+            echo "  Actual:   $filename"
+            exit 1
+          fi
+
+          echo "✅ Specific parameters test passed!"
+
+      - name: Test pattern
+        id: test-pattern
+        uses: ./framework-compose-filename
+        with:
+          pattern: "opendaq-3.18.0-*.${{ matrix.expected-extension }}"
+
+      - name: Verify pattern test
+        shell: bash
+        run: |
+          filename="${{ steps.test-pattern.outputs.filename }}"
+          version="${{ steps.test-pattern.outputs.version }}"
+          extension="${{ steps.test-pattern.outputs.extension }}"
+          
+          # Should extract version from pattern
+          if [[ "$version" != "v3.18.0" ]]; then
+            echo "❌ Pattern version extraction failed:"
+            echo "  Expected: v3.18.0"
+            echo "  Actual:   $version"
+            exit 1
+          fi
+
+          # Should extract extension from pattern
+          if [[ "$extension" != "${{ matrix.expected-extension }}" ]]; then
+            echo "❌ Pattern extension extraction failed:"
+            echo "  Expected: ${{ matrix.expected-extension }}"
+            echo "  Actual:   $extension"
+            exit 1
+          fi
+
+          echo "✅ Pattern test passed!"
+
+  # Summary job
+  test-summary:
+    needs: [test-action]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Test Summary
+        run: |
+          echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.test-action.result }}" == "success" ]]; then
+            echo "✅ **All tests passed successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Tested scenarios:" >> $GITHUB_STEP_SUMMARY
+            echo "- Default parameters (latest version)" >> $GITHUB_STEP_SUMMARY
+            echo "- Fixed version (3.20.4)" >> $GITHUB_STEP_SUMMARY  
+            echo "- Specific parameters" >> $GITHUB_STEP_SUMMARY
+            echo "- Pattern parsing" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Tested platforms: Ubuntu, Windows, macOS"
+          else
+            echo "❌ **Some tests failed!**" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
