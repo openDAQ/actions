@@ -17,9 +17,18 @@ inputs:
     description: "CPack generator (DEB/NSIS/TARGZ/ZIP, used when pattern has * for extension)"
     required: false
   token:
-    description: "Personal access token (PAT) used to request openDAQ repositories"
+    description: |
+      Personal access token (PAT) used to fetch release information from GitHub API.
+      
+      We recommend using a service account with the least permissions necessary.
+      Also when generating a new PAT, select the least scopes necessary.
+      
+      Required scopes: 'repo' (for private repositories), 'read:packages' (for releases)
+      
+      [Learn more about creating and using encrypted secrets](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
     required: false
     default: ${{ github.token }}
+
 outputs:
   filename:
     description: "Resolved artifact filename"
@@ -42,15 +51,19 @@ runs:
   using: "composite"
   steps:
     - name: Display input parameters
+      shell: bash
       run: |
         echo "🔍 Input Parameters:"
-        echo "Runner: ${{ inputs.runner }}"
-        echo "Pattern: '${{ inputs.pattern || 'not set' }}'"
-        echo "Version: '${{ inputs.version || 'not set' }}'"
-        echo "Platform: '${{ inputs.platform || 'not set' }}'"
-        echo "Packaging: '${{ inputs.packaging || 'not set' }}'"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Pattern: '${{ inputs.pattern }}'"
+        echo "Version: '${{ inputs.version }}'"
+        echo "Platform: '${{ inputs.platform }}'"
+        echo "Packaging: '${{ inputs.packaging }}'"
+        echo "Token: ${{ inputs.token && '***SET***' || '***NOT SET***' }}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     - name: Parse pattern and resolve filename
+      id: parse-and-resolve
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.token }}
@@ -259,15 +272,7 @@ runs:
         # Compose openDAQ framework package filename
         filename="opendaq-${clean_version}-${platform}.${extension}"
         
-        echo ""
-        echo "🎯 Final Results:"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "📁 Filename: $filename"
-        echo "🏷️  Version: $tagged_version ($major.$minor.$patch)"
-        echo "🖥️  Platform: $platform"
-        echo "📦 Extension: $extension"
-        echo "🔧 Packaging: $packaging"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "✅ Filename composed successfully: $filename"
         
         # Write to GitHub outputs
         echo "filename=${filename}" >> "$GITHUB_OUTPUT"
@@ -278,3 +283,29 @@ runs:
         echo "version-patch=${patch}" >> "$GITHUB_OUTPUT"
         echo "platform=${platform}" >> "$GITHUB_OUTPUT"
         echo "packaging=${packaging}" >> "$GITHUB_OUTPUT"
+        
+        # Set environment variables for display step
+        echo "RESOLVED_FILENAME=${filename}" >> "$GITHUB_ENV"
+        echo "RESOLVED_EXTENSION=${extension}" >> "$GITHUB_ENV"
+        echo "RESOLVED_VERSION=${tagged_version}" >> "$GITHUB_ENV"
+        echo "RESOLVED_MAJOR=${major}" >> "$GITHUB_ENV"
+        echo "RESOLVED_MINOR=${minor}" >> "$GITHUB_ENV"
+        echo "RESOLVED_PATCH=${patch}" >> "$GITHUB_ENV"
+        echo "RESOLVED_PLATFORM=${platform}" >> "$GITHUB_ENV"
+        echo "RESOLVED_PACKAGING=${packaging}" >> "$GITHUB_ENV"
+
+    - name: Display resolved results
+      shell: bash
+      run: |
+        echo ""
+        echo "🎯 Final Results:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📁 Filename: $RESOLVED_FILENAME"
+        echo "📦 Extension: $RESOLVED_EXTENSION"
+        echo "🏷️  Version: $RESOLVED_VERSION"
+        echo "   └─ Major: $RESOLVED_MAJOR"
+        echo "   └─ Minor: $RESOLVED_MINOR"
+        echo "   └─ Patch: $RESOLVED_PATCH"
+        echo "🖥️  Platform: $RESOLVED_PLATFORM"
+        echo "🔧 Packaging: $RESOLVED_PACKAGING"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
