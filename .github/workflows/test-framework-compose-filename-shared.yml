@@ -23,10 +23,10 @@ jobs:
           #   expected-platform-alias: "ubuntu24.04-x86_64"
           #   expected-packaging: "DEB"
           #   expected-extension: "deb"
-          # - os: windows-latest
-          #   expected-platform-alias: "win64"
-          #   expected-packaging: "NSIS"
-          #   expected-extension: "exe"
+          - os: windows-latest
+            expected-platform-alias: "win64"
+            expected-packaging: "NSIS"
+            expected-extension: "exe"
           - os: macos-13
             expected-platform-alias: "macos13-x86_64"
             expected-packaging: "TARGZ"
