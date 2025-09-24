@@ -1,4 +1,4 @@
-name: Test All Actions
+name: "Run all actions tests"
 
 on:
   push:
@@ -6,16 +6,6 @@ on:
       - main
 
 jobs:
-  test-actions:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        action: [
-            framework-download-artifact, 
-            framework-download-release, 
-            framework-install
-            ]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+  test-framework-compose-filename-actions:
+    uses: ./.github/workflows/test-framework-compose-filename-shared.yml
+    secrets: inherit
