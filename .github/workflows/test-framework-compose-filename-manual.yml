@@ -38,12 +38,17 @@ on:
         default: ""
 
 jobs:
-  dispatch-workflow:
-    uses: ./.github/workflows/test-framework-compose-filename-shared.yml
-    with:
-      runner: ${{ inputs.runner }}
-      pattern: ${{ inputs.pattern }}
-      version: ${{ inputs.version }}
-      platform: ${{ inputs.platform }}
-      packaging: ${{ inputs.packaging }}
-    secrets: inherit
+  dispatch-action:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Call framework compose filename action
+        uses: ./framework-compose-filename
+        with:
+          pattern: ${{ inputs.pattern }}
+          version: ${{ inputs.version }}
+          platform: ${{ inputs.platform }}
+          packaging: ${{ inputs.packaging }}
+          
