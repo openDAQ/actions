@@ -1,0 +1,100 @@
+name: "Test Framework Compose Filename - Shared"
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: "Runner to use"
+        type: string
+        required: true
+      pattern:
+        description: "Pattern"
+        type: string
+        required: false
+      version:
+        description: "Version"
+        type: string
+        required: false
+      platform:
+        description: "Platform"
+        type: string
+        required: false
+      packaging:
+        description: "Packaging"
+        type: string
+        required: false
+    outputs:
+      filename:
+        description: "Generated filename"
+        value: ${{ jobs.test-action.outputs.filename }}
+      version:
+        description: "Resolved version"
+        value: ${{ jobs.test-action.outputs.version }}
+      platform:
+        description: "Resolved platform"
+        value: ${{ jobs.test-action.outputs.platform }}
+
+jobs:
+  test-action:
+    runs-on: ${{ inputs.runner }}
+    outputs:
+      filename: ${{ steps.compose.outputs.filename }}
+      version: ${{ steps.compose.outputs.version }}
+      platform: ${{ steps.compose.outputs.platform }}
+      extension: ${{ steps.compose.outputs.extension }}
+      packaging: ${{ steps.compose.outputs.packaging }}
+      version-major: ${{ steps.compose.outputs.version-major }}
+      version-minor: ${{ steps.compose.outputs.version-minor }}
+      version-patch: ${{ steps.compose.outputs.version-patch }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Display input parameters
+        run: |
+          echo "🔍 Input Parameters:"
+          echo "Runner: ${{ inputs.runner }}"
+          echo "Pattern: '${{ inputs.pattern || 'not set' }}'"
+          echo "Version: '${{ inputs.version || 'not set' }}'"
+          echo "Platform: '${{ inputs.platform || 'not set' }}'"
+          echo "Packaging: '${{ inputs.packaging || 'not set' }}'"
+
+      - name: Call framework compose filename action
+        id: compose
+        uses: ./framework-compose-filename
+        with:
+          pattern: ${{ inputs.pattern }}
+          version: ${{ inputs.version }}
+          platform: ${{ inputs.platform }}
+          packaging: ${{ inputs.packaging }}
+
+      - name: Display results
+        run: |
+          echo "🎯 Results:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📁 Filename: ${{ steps.compose.outputs.filename }}"
+          echo "📦 Extension: ${{ steps.compose.outputs.extension }}"
+          echo "🏷️  Version: ${{ steps.compose.outputs.version }}"
+          echo "   └─ Major: ${{ steps.compose.outputs.version-major }}"
+          echo "   └─ Minor: ${{ steps.compose.outputs.version-minor }}"
+          echo "   └─ Patch: ${{ steps.compose.outputs.version-patch }}"
+          echo "🖥️  Platform: ${{ steps.compose.outputs.platform }}"
+          echo "🔧 Packaging: ${{ steps.compose.outputs.packaging }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      - name: Create summary
+        run: |
+          echo "## Action Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Output | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Filename** | \`${{ steps.compose.outputs.filename }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Extension** | \`${{ steps.compose.outputs.extension }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | \`${{ steps.compose.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Platform** | \`${{ steps.compose.outputs.platform }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Packaging** | \`${{ steps.compose.outputs.packaging }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Version Components" >> $GITHUB_STEP_SUMMARY
+          echo "- **Major:** ${{ steps.compose.outputs.version-major }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Minor:** ${{ steps.compose.outputs.version-minor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Patch:** ${{ steps.compose.outputs.version-patch }}" >> $GITHUB_STEP_SUMMARY

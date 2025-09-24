@@ -1,0 +1,49 @@
+name: "Call action manually: framework compose filename"
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner to use"
+        type: choice
+        options:
+          - ubuntu-latest
+          - ubuntu-22.04
+          - windows-latest
+          - macos-latest
+        required: true
+        default: ubuntu-latest
+      pattern:
+        description: "Pattern (e.g. opendaq-*-*.*, opendaq-3.20.4-*.*)"
+        required: false
+        type: string
+      version:
+        description: "Version (e.g. 3.20.4, v3.20.4, latest)"
+        required: false
+        type: string
+      platform:
+        description: "Platform (e.g. ubuntu22.04-x86_64, win64, macos13-arm64)"
+        required: false
+        type: string
+      packaging:
+        description: "Packaging (DEB, NSIS, TARGZ, ZIP)"
+        type: choice
+        options:
+          - ""
+          - DEB
+          - NSIS
+          - TARGZ
+          - ZIP
+        required: false
+        default: ""
+
+jobs:
+  dispatch-workflow:
+    uses: ./.github/workflows/test-framework-compose-filename-shared.yml
+    with:
+      runner: ${{ inputs.runner }}
+      pattern: ${{ inputs.pattern }}
+      version: ${{ inputs.version }}
+      platform: ${{ inputs.platform }}
+      packaging: ${{ inputs.packaging }}
+    secrets: inherit

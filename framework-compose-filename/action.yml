@@ -3,215 +3,278 @@ description: "Resolves artifact filename from pattern, inputs, or autodetect."
 
 inputs:
   pattern:
-    description: "Glob/wildcard pattern for artifact name (optional)"
+    description: "File pattern with wildcards (default: 'opendaq-*-*.*'). Use * for auto-resolution."
     required: false
     default: "opendaq-*-*.*"
-
   version:
-    description: "Version to use if not in pattern (optional)"
+    description: "Version or git tag (e.g. '3.20.4', 'v3.20.4' or 'latest', used when pattern has * for version)"
     required: false
-  platform-alias:
-    description: "Platform alias to use if not in pattern (optional)"
+    default: "latest"
+  platform:
+    description: "Platform alias (e.g. 'ubuntu22.04-x86_64', used when pattern has * for platform)"
     required: false
   packaging:
-    description: "Packaging type to determine file extension if not in pattern (optional, NSIS/ZIP/DEB/TARGZ)"
+    description: "CPack generator (DEB/NSIS/TARGZ/ZIP, used when pattern has * for extension)"
     required: false
-
+  token:
+    description: "Personal access token (PAT) used to request openDAQ repositories"
+    required: false
+    default: ${{ github.token }}
 outputs:
   filename:
     description: "Resolved artifact filename"
-  version:
-    description: "Resolved version"
-  platform-alias:
-    description: "Resolved platform alias"
-  file-ext:
+  extension:
     description: "Resolved file extension"
+  version:
+    description: "Resolved version (always with 'v' prefix, e.g. v3.20.4)"
+  version-major:
+    description: "Major version component (e.g. 3)"
+  version-minor:
+    description: "Minor version component (e.g. 20)"
+  version-patch:
+    description: "Patch version component (e.g. 4)"
+  platform:
+    description: "Resolved platform alias"
+  packaging:
+    description: "Resolved CPack generator"
 
 runs:
   using: "composite"
   steps:
-    - name: Parse pattern
-      id: parse-pattern
+    - name: Display input parameters
+      run: |
+        echo "🔍 Input Parameters:"
+        echo "Runner: ${{ inputs.runner }}"
+        echo "Pattern: '${{ inputs.pattern || 'not set' }}'"
+        echo "Version: '${{ inputs.version || 'not set' }}'"
+        echo "Platform: '${{ inputs.platform || 'not set' }}'"
+        echo "Packaging: '${{ inputs.packaging || 'not set' }}'"
+
+    - name: Parse pattern and resolve filename
       shell: bash
       env:
-        pattern: ${{ inputs.pattern }}
+        GH_TOKEN: ${{ inputs.token }}
       run: |
-        if [[ ! "$pattern" != opendaq-*-*.* ]]; then
-          echo "❌ Invalid pattern format: ${PATTERN}"
-          cat <<EOF
-          💡 Hint: Input 'pattern' must be either empty or match the format: opendaq-*-*.*
-
-          Where:
-            - first *  → version in format MAJOR.MINOR.PATCH (e.g. 3.20.4)
-            - second * → platform alias (e.g. ubuntu22.04-x86_64, ubuntu22.04-arm64, win32, win64, etc.)
-            - third *  → file extension (e.g. exe, deb, etc.)
-          EOF
-          exit 1
-        fi
-
-        rest="${pattern#opendaq-}"
-        base="${rest%.*}"
-
-        version="${base%%-*}"
-        platform="${base#*-}"
-        ext="${rest##*.}"
-
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-        echo "platform-alias=$platform" >> "$GITHUB_OUTPUT"
-        echo "ext=$ext" >> "$GITHUB_OUTPUT"
-
-    - name: Validate requested version
-      id: validate-framework-version
-      shell: bash
-      env:
-        PACKAGE_VERSION: ${{ steps.parse-pattern.outputs.version || intputs.version }}
-      run: |
-        version=$PACKAGE_VERSION
-        if [[ -n "$version" && "$version" != "latest" && ! "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "❌ Invalid version format: $VERSION" > &2
-          exit 1
-        fi
-
-        echo "version-name=${version#v}" >> "$GITHUB_OUTPUT"
-
-    - name: Resolve version
-      id: resolve-version
-      shell: bash
-      env:
-        PACKAGE_VERSION: ${{ validate-framework-version.outputs.version-name || 'latest' }}
-      run: |
-        version=
-        tag=
+        set -e
         
-        if [[ "$PACKAGE_VERSION" == "latest" ]]; then
-          tag=$(gh release view "latest" --repo openDAQ/openDAQ --json tagName -q '.tagName')
-          version="${tag#v}"
-        else
-          version="${PACKAGE_VERSION#v}"
-          tag="v$version"
+        pattern="${{ inputs.pattern }}"
+        input_version="${{ inputs.version }}"
+        input_platform="${{ inputs.platform }}"
+        input_packaging="${{ inputs.packaging }}"
+        
+        # Use default pattern if empty
+        if [[ -z "$pattern" ]]; then
+          pattern="opendaq-*-*.*"
         fi
-
-        if [[ -z "$version" ]]; then
-          echo "❌ Resolved version is empty"
+        
+        echo "🔍 Processing pattern: $pattern"
+        
+        # Validate pattern format
+        if [[ ! "$pattern" =~ ^opendaq-.*-.*\..*$ ]]; then
+          echo "❌ Pattern must match format: opendaq-VERSION-PLATFORM.EXTENSION"
+          echo "   Use * for wildcards: opendaq-*-*.*"
           exit 1
         fi
-
-        IFS='.' read -r major minor patch <<< "$version"
-
-        if [[ -z "$major" || -z "$minor" || -z "$patch" ]]; then
-          echo "❌ Failed to parse version into major.minor.patch"
-          exit 1
-        fi
-
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-        echo "version-tag=$tag" >> "$GITHUB_OUTPUT"
-        echo "version-major=$major" >> "$GITHUB_OUTPUT"
-        echo "version-minor=$minor" >> "$GITHUB_OUTPUT"
-        echo "version-patch=$patch" >> "$GITHUB_OUTPUT"
-
-    - name: Validate platform alias
-      id: validate-platform-alias
-      shell: bash
-      env:
-        PLATFORM_ALIAS: ${{ steps.parse-pattern.outputs.platform-alias || inputs.platform-alias }}
-        PLATFORM_OS: ${{ github.runner.os.toLowerCase() }}
-        PLATFORM_ARCH: ${{ github.runner.arch.toLowerCase() }}
-      run: |
-        alias="$PLATFORM_ALIAS"
-
-        if [[ -z "$alias" || "$alias" =~ ^(win32|win64|ubuntu[0-9]+\.[0-9]+-(x86_64|arm64)|macos[0-9]+-(x86_64|arm64))$ ]]; then
-          echo "platform-alias=$alias" >> "$GITHUB_OUTPUT"
-        else
-          echo "❌ Invalid platform-alias in pattern/input: $alias" >&2
-          exit 1
-        fi
-
-    - name: Resolve platform alias
-      id: resolve-platform-alias
-      shell: bash
-      env:
-        PLATFORM_ALIAS: ${{ steps.parse-pattern.outputs.platform-alias || inputs.platform-alias }}
-        PLATFORM_OS: ${{ github.runner.os.toLowerCase() }}
-        PLATFORM_ARCH: ${{ github.runner.arch.toLowerCase() }}
-      run: |
-        alias="$PLATFORM_ALIAS"
-
-        # Если PATTERN_ALIAS указан → сразу возвращаем
-        if [[ -n "$alias" ]]; then
-          echo "platform-alias=$alias" >> "$GITHUB_OUTPUT"
-          echo "platform-os=${PLATFORM_OS}" >> "$GITHUB_OUTPUT"
-          echo "platform-arch=${PLATFORM_ARCH}" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-
-        case "$PLATFORM_ARCH" in
-          x64|amd64) PLATFORM_ARCH="x86_64" ;;
-          arm64|aarch64) PLATFORM_ARCH="arm64" ;;
-          *) 
-            echo "❌ Unsupported architecture for $PLATFORM_OS: $PLATFORM_ARCH" >&2
+        
+        # Extract components from pattern
+        temp="${pattern#opendaq-}"
+        pattern_version="${temp%%-*}"
+        temp="${temp#*-}"
+        pattern_platform="${temp%.*}"
+        pattern_extension="${pattern##*.}"
+        
+        echo "📋 Pattern components:"
+        echo "  Version: '$pattern_version'"
+        echo "  Platform: '$pattern_platform'"  
+        echo "  Extension: '$pattern_extension'"
+        
+        # Resolve openDAQ framework package version
+        if [[ "$pattern_version" != "*" ]]; then
+          # Version is specified in pattern - validate and use it
+          if [[ ! "$pattern_version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Invalid version format in pattern: $pattern_version"
+            echo "   Expected format: X.Y.Z or vX.Y.Z (e.g., 3.20.4 or v3.20.4)"
             exit 1
-            ;;
-        esac
-
-        case "$PLATFORM_OS" in
-          linux)
-            ubuntu_ver="22.04"
-            if [[ -f /etc/os-release ]]; then
-              . /etc/os-release || true
-              if [[ "${VERSION_ID:-}" =~ ^24 ]]; then ubuntu_ver="24.04"; fi
-              if [[ "${VERSION_ID:-}" =~ ^22 ]]; then ubuntu_ver="22.04"; fi
+          fi
+          # Store clean version for filename (without 'v') and tagged version for output (with 'v')
+          clean_version="${pattern_version#v}"
+          tagged_version="v${clean_version}"
+          
+          # Parse version components
+          IFS='.' read -r major minor patch <<< "$clean_version"
+          echo "✅ Using version from pattern: $clean_version (output: $tagged_version)"
+        else
+          # Pattern doesn't contain version - use input.version or resolve latest
+          input_version_value="$input_version"
+          if [[ "$input_version_value" == "latest" || -z "$input_version_value" ]]; then
+            echo "🔍 Resolving latest version..."
+            tag=$(gh release list --repo openDAQ/openDAQ --json tagName,isLatest -q '.[] | select(.isLatest == true) | .tagName')
+            if [[ -z "$tag" ]]; then
+              echo "❌ Failed to resolve latest version"
+              exit 1
             fi
-            alias="ubuntu${ubuntu_ver}-${PLATFORM_ARCH}"
-            ;;
-          macos)
-            mac_major="13"
-            if command -v sw_vers >/dev/null 2>&1; then
-              mac_major="$(sw_vers -productVersion | cut -d. -f1)"
+            # Extract clean version and store tagged version
+            clean_version="${tag#v}"
+            tagged_version="$tag"
+            
+            # Parse version components
+            IFS='.' read -r major minor patch <<< "$clean_version"
+          else
+            # Validate version from inputs (can be vX.Y.Z or X.Y.Z)
+            if [[ ! "$input_version_value" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "❌ Invalid version format: $input_version_value"
+              echo "   Expected format: X.Y.Z or vX.Y.Z (e.g., 3.20.4 or v3.20.4)"
+              exit 1
             fi
-            alias="macos${mac_major}-${PLATFORM_ARCH}"
-            ;;
-          windows) alias=win64;;
-          *)
-            echo "❌ Unsupported runner OS: $PLATFORM_OS" >&2
+            # Store clean version for filename and tagged version for output
+            clean_version="${input_version_value#v}"
+            tagged_version="v${clean_version}"
+          fi
+          
+          # Parse version components
+          IFS='.' read -r major minor patch <<< "$clean_version"
+          echo "✅ Using resolved version: $clean_version (output: $tagged_version)"
+        fi
+        
+        # Resolve platform alias
+        if [[ "$pattern_platform" != "*" ]]; then
+          # Platform is specified in pattern - validate and use it
+          if [[ ! "$pattern_platform" =~ ^(ubuntu(22\.04|24\.04)-(x86_64|arm64)|macos(13|14|15|16)-(x86_64|arm64)|win(32|64))$ ]]; then
+            echo "❌ Invalid platform format in pattern: $pattern_platform"
+            echo "   Expected formats:"
+            echo "   - ubuntu22.04-x86_64, ubuntu22.04-arm64, ubuntu24.04-x86_64, ubuntu24.04-arm64"
+            echo "   - macos13-x86_64, macos13-arm64, macos14-x86_64, macos14-arm64, etc."
+            echo "   - win32, win64"
             exit 1
-        esac
-      
-        echo "platform-alias=$alias" >> "$GITHUB_OUTPUT"
-
-    - name: Validate package file extension
-      id: validate-package-ext
-      shell: bash
-      env:
-        PACKAGING: ${{ steps.parse-pattern.outputs.ext || inputs.packaging }}
-      run: |
-        ext="$PACKAGING"
-        if [[ -n "$PACKAGING" ]]; then
-          case "$PACKAGING" in 
-            exe|EXE|NSIS) ext='exe' ;;
-            tar.gz|tgz|TARGZ) ext='tar.gz' ;;
-            zip|ZIP) ext='zip' ;;
-            deb|DEB) ext='deb' ;;
-            *) exit 1 ;;
-          esac
+          fi
+          platform="$pattern_platform"
+          echo "✅ Using platform from pattern: $platform"
+        else
+          # Platform is not specified in pattern
+          if [[ -n "$input_platform" ]]; then
+            # Use and validate platform from input
+            if [[ ! "$input_platform" =~ ^(ubuntu(22\.04|24\.04)-(x86_64|arm64)|macos(13|14|15|16)-(x86_64|arm64)|win(32|64))$ ]]; then
+              echo "❌ Invalid platform format: $input_platform"
+              echo "   Expected formats:"
+              echo "   - ubuntu22.04-x86_64, ubuntu22.04-arm64, ubuntu24.04-x86_64, ubuntu24.04-arm64"
+              echo "   - macos13-x86_64, macos13-arm64, macos14-x86_64, macos14-arm64, etc."
+              echo "   - win32, win64"
+              exit 1
+            fi
+            platform="$input_platform"
+            echo "✅ Using platform from input: $platform"
+          else
+            # Autodetect platform alias
+            case "${{ runner.os }}" in
+              Linux)
+                arch="${{ runner.arch }}"
+                [[ "$arch" == "X64" ]] && arch="x86_64"
+                [[ "$arch" == "ARM64" ]] && arch="arm64"
+                ubuntu_ver="22.04"
+                if [[ -f /etc/os-release ]]; then
+                  . /etc/os-release || true
+                  if [[ "${VERSION_ID:-}" =~ ^24 ]]; then ubuntu_ver="24.04"; fi
+                  if [[ "${VERSION_ID:-}" =~ ^22 ]]; then ubuntu_ver="22.04"; fi
+                fi
+                platform="ubuntu${ubuntu_ver}-${arch}"
+                ;;
+              macOS)
+                arch="${{ runner.arch }}"
+                [[ "$arch" == "X64" ]] && arch="x86_64"
+                [[ "$arch" == "ARM64" ]] && arch="arm64"
+                mac_major="13"
+                if command -v sw_vers >/dev/null 2>&1; then
+                  mac_major="$(sw_vers -productVersion | cut -d. -f1)"
+                fi
+                platform="macos${mac_major}-${arch}"
+                ;;
+              Windows)
+                platform="win64"
+                ;;
+              *)
+                echo "❌ Cannot detect platform alias: Unsupported OS: ${{ runner.os }}"
+                exit 1
+                ;;
+            esac
+            echo "✅ Using autodetected platform: $platform"
+          fi
         fi
-
-        echo "file-ext=$ext" >> "$GITHUB_OUTPUT"
-
-    - name: Resolve package file extension
-      id: resolve-package-ext
-      shell: bash
-      env:
-        PACKAGING: ${{ steps.validate-package-ext.outputs.ext }}
-        CURRENT_OS: ${{ github.runner.os.toLowerCase() }}
-      run: |
-        ext="$PACKAGING"
-        if [[ -z "$PACKAGING" ]]; then
-          case "$CURRENT_OS" in
-            linux) ext='deb' ;;
-            macos) ext='tar.gz' ;;
-            windows) ext='exe' ;;
+        
+        # Resolve openDAQ framework file extension and packaging
+        if [[ "$pattern_extension" != "*" ]]; then
+          # File extension is specified in pattern - validate and determine packaging
+          case "$pattern_extension" in
+            deb) packaging="DEB" ;;
+            exe) packaging="NSIS" ;;
+            tar.gz) packaging="TARGZ" ;;
+            zip) packaging="ZIP" ;;
+            *)
+              echo "❌ Unsupported extension in pattern: $pattern_extension"
+              echo "   Supported extensions: deb, exe, tar.gz, zip"
+              exit 1
+              ;;
           esac
+          extension="$pattern_extension"
+          echo "✅ Using extension from pattern: $extension -> $packaging"
+        else
+          # Extension is not specified in pattern
+          if [[ -n "$input_packaging" ]]; then
+            # Use and validate packaging to determine extension
+            case "${input_packaging^^}" in  # Convert to uppercase
+              DEB) extension="deb"; packaging="DEB" ;;
+              NSIS) extension="exe"; packaging="NSIS" ;;
+              TARGZ|TGZ) extension="tar.gz"; packaging="TARGZ" ;;
+              ZIP) extension="zip"; packaging="ZIP" ;;
+              *)
+                echo "❌ Unsupported CPack generator: $input_packaging"
+                echo "   Supported generators: DEB, NSIS, TARGZ, ZIP"
+                exit 1
+                ;;
+            esac
+            echo "✅ Using packaging from input: $packaging -> $extension"
+          else
+            # Autodetect packaging and extension by OS
+            case "${{ runner.os }}" in
+              Linux) 
+                extension="deb"
+                packaging="DEB"
+                ;;
+              macOS) 
+                extension="tar.gz"
+                packaging="TARGZ"
+                ;;
+              Windows) 
+                extension="exe"
+                packaging="NSIS"
+                ;;
+              *)
+                echo "❌ Cannot detect file extension: Unsupported OS: ${{ runner.os }}"
+                exit 1
+                ;;
+            esac
+            echo "✅ Using autodetected packaging: $packaging -> $extension"
+          fi
         fi
-
-        echo "file-ext=$ext" >> "$GITHUB_OUTPUT"
-
+        
+        # Compose openDAQ framework package filename
+        filename="opendaq-${clean_version}-${platform}.${extension}"
+        
+        echo ""
+        echo "🎯 Final Results:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📁 Filename: $filename"
+        echo "🏷️  Version: $tagged_version ($major.$minor.$patch)"
+        echo "🖥️  Platform: $platform"
+        echo "📦 Extension: $extension"
+        echo "🔧 Packaging: $packaging"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        
+        # Write to GitHub outputs
+        echo "filename=${filename}" >> "$GITHUB_OUTPUT"
+        echo "extension=${extension}" >> "$GITHUB_OUTPUT"
+        echo "version=${tagged_version}" >> "$GITHUB_OUTPUT"
+        echo "version-major=${major}" >> "$GITHUB_OUTPUT"
+        echo "version-minor=${minor}" >> "$GITHUB_OUTPUT"
+        echo "version-patch=${patch}" >> "$GITHUB_OUTPUT"
+        echo "platform=${platform}" >> "$GITHUB_OUTPUT"
+        echo "packaging=${packaging}" >> "$GITHUB_OUTPUT"
