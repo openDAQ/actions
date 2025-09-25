@@ -4,3 +4,6 @@ Thumbs.db
 
 # Secrets
 .secrets
+
+# Local configs
+.actrc

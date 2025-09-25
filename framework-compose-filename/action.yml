@@ -159,10 +159,10 @@ runs:
         # Resolve platform alias
         if [[ "$pattern_platform" != "*" ]]; then
           # Platform is specified in pattern - validate and use it
-          if [[ ! "$pattern_platform" =~ ^(ubuntu(22\.04|24\.04)-(x86_64|arm64)|macos(13|14|15|16)-(x86_64|arm64)|win(32|64))$ ]]; then
+          if [[ ! "$pattern_platform" =~ ^(ubuntu(20\.04|22\.04|24\.04)-(x86_64|arm64)|macos(13|14|15|16)-(x86_64|arm64)|win(32|64))$ ]]; then
             echo "❌ Invalid platform format in pattern: $pattern_platform"
             echo "   Expected formats:"
-            echo "   - ubuntu22.04-x86_64, ubuntu22.04-arm64, ubuntu24.04-x86_64, ubuntu24.04-arm64"
+            echo "   - ubuntu22.04-x86_64, ubuntu22.04-x86_64, ubuntu22.04-arm64, ubuntu24.04-x86_64, ubuntu24.04-arm64"
             echo "   - macos13-x86_64, macos13-arm64, macos14-x86_64, macos14-arm64, etc."
             echo "   - win32, win64"
             exit 1
@@ -173,10 +173,10 @@ runs:
           # Platform is not specified in pattern
           if [[ -n "$input_platform" ]]; then
             # Use and validate platform from input
-            if [[ ! "$input_platform" =~ ^(ubuntu(22\.04|24\.04)-(x86_64|arm64)|macos(13|14|15|16)-(x86_64|arm64)|win(32|64))$ ]]; then
+            if [[ ! "$input_platform" =~ ^(ubuntu(20\.04|22\.04|24\.04)-(x86_64|arm64)|macos(13|14|15|16)-(x86_64|arm64)|win(32|64))$ ]]; then
               echo "❌ Invalid platform format: $input_platform"
               echo "   Expected formats:"
-              echo "   - ubuntu22.04-x86_64, ubuntu22.04-arm64, ubuntu24.04-x86_64, ubuntu24.04-arm64"
+              echo "   - ubuntu20.04-x86_64, ubuntu22.04-x86_64, ubuntu22.04-arm64, ubuntu24.04-x86_64, ubuntu24.04-arm64"
               echo "   - macos13-x86_64, macos13-arm64, macos14-x86_64, macos14-arm64, etc."
               echo "   - win32, win64"
               exit 1
