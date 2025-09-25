@@ -53,6 +53,24 @@ jobs:
           platform: ${{ inputs.platform }}
           packaging: ${{ inputs.packaging }}
 
-      - name: Display
+      - name: Display framework compose filename action outputs
+        shell: bash
+        env:
+          OPENDAQ_COMPOSE_FILENAME: ${{ steps.call-framework-compose-filename.outputs.filename }}
+          OPENDAQ_COMPOSE_EXTENSION: ${{ steps.call-framework-compose-filename.outputs.extension }}
+          OPENDAQ_COMPOSE_VERSION: ${{ steps.call-framework-compose-filename.outputs.version }}
+          OPENDAQ_COMPOSE_VERSION_MAJOR: ${{ steps.call-framework-compose-filename.outputs.version-major }}
+          OPENDAQ_COMPOSE_VERSION_MINOR: ${{ steps.call-framework-compose-filename.outputs.version-minor }}
+          OPENDAQ_COMPOSE_VERSION_PATCH: ${{ steps.call-framework-compose-filename.outputs.version-patch }}
+          OPENDAQ_COMPOSE_PLATFORM: ${{ steps.call-framework-compose-filename.outputs.platform }}
+          OPENDAQ_COMPOSE_PACKAGING: ${{ steps.call-framework-compose-filename.outputs.packaging }}
         run: |
-          echo "version -> ${{ steps.call-framework-compose-filename.outputs.version }}"
+          echo "=== Action output === "
+          echo "'$OPENDAQ_COMPOSE_FILENAME'"
+          echo "├── extension: '$OPENDAQ_COMPOSE_EXTENSION'"
+          echo "├── packaging: '$OPENDAQ_COMPOSE_PACKAGING'"
+          echo "├── platform: '$OPENDAQ_COMPOSE_PLATFORM'"
+          echo "└── version: '$OPENDAQ_COMPOSE_VERSION'"
+          echo "    ├── major: '$OPENDAQ_COMPOSE_VERSION_MAJOR'"
+          echo "    ├── minor: '$OPENDAQ_COMPOSE_VERSION_MAJOR'"
+          echo "    └── patch: '$OPENDAQ_COMPOSE_VERSION_PATCH'"
