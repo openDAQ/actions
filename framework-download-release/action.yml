@@ -1,0 +1,416 @@
+name: Download openDAQ Release Package
+description: Downloads the openDAQ framework release package from GitHub Releases.
+
+inputs:
+  artifact:
+    required: false
+
+  version: 
+    required: false
+    default: 'latest'
+
+  platform:
+    required: false
+
+  token:
+    description: Personal access token (PAT) used to fetch release information from GitHub API.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  artifact:
+    description: 'Filename of downloaded artifact'
+    value: ${{ steps.download-framework-artifact.outputs.artifact }}
+  
+  artifact-path:
+    description: 'Full path to downloaded artifact (native OS format)'
+    value: ${{ steps.download-framework-artifact.outputs.artifact-path }}
+  
+  artifact-dir:
+    description: 'Directory containing the artifact (native OS format)'
+    value: ${{ steps.download-framework-artifact.outputs.artifact-dir }}
+
+  artifact-sha256:
+    description: 'Standard SHA-256 hash of the file (for manual verification)'
+    value: ${{ steps.compute-file-hash.outputs.sha256 }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Display input parameters
+      shell: bash
+      run: |
+        echo "📋 Input Parameters:"
+        echo "═══════════════════════════════════════════════════"
+        echo "Artifact: ${{ inputs.artifact || '***NOT SET***' }}"
+        echo "Version: ${{ inputs.version || '***NOT SET***' }}"
+        echo "Platform: ${{ inputs.platform || '***NOT SET***' }}"
+        echo "Token: ${{ inputs.token && '***SET***' || '***NOT SET***' }}"
+        echo "═══════════════════════════════════════════════════"
+
+    - name: Compose openDAQ artifact
+      if: ${{ !inputs.version || inputs.version == 'latest' || !inputs.artifact }}
+      id: compose-framework-artifact
+      uses: ./framework-compose-filename
+      with:
+        version: ${{ inputs.version }}
+        platform: ${{ inputs.platform }}
+
+    - name: Resolve openDAQ artifact
+      id: resolve-framework-artifact
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_ARTIFACT: ${{ inputs.artifact }}
+        RESOLVED_ARTIFACT: ${{ steps.compose-framework-artifact.outputs.filename }}
+        RESOLVED_VERSION: ${{ steps.compose-framework-artifact.outputs.version }}
+      run: |
+        echo "=== Resolving artifact and version ==="
+        
+        # Check if compose step was executed and has outputs
+        if [[ -n "$RESOLVED_ARTIFACT" && -n "$RESOLVED_VERSION" ]]; then
+          echo "Using compose results:"
+          echo "  Artifact: $RESOLVED_ARTIFACT"
+          echo "  Version: $RESOLVED_VERSION"
+          
+          echo "filename=$RESOLVED_ARTIFACT" >> "$GITHUB_OUTPUT"
+          echo "version=$RESOLVED_VERSION" >> "$GITHUB_OUTPUT"
+        else
+          echo "Using input values:"
+          echo "  Artifact: ${INPUT_ARTIFACT:-'***NOT SET***'}"
+          echo "  Version: ${INPUT_VERSION:-'latest'}"
+          
+          # Use input values as fallback
+          output_artifact="${INPUT_ARTIFACT:-}"
+          output_version="${INPUT_VERSION:-latest}"
+          
+          echo "filename=$output_artifact" >> "$GITHUB_OUTPUT"
+          echo "version=$output_version" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Download openDAQ framework
+      id: download-framework-artifact
+      shell: bash
+      env:
+        DESTINATION_DIR: ${{ runner.temp }}
+        OPENDAQ_VERSION: ${{ steps.resolve-framework-artifact.outputs.version }}
+        OPENDAQ_FILENAME: ${{ steps.resolve-framework-artifact.outputs.filename }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        # Function to normalize paths for CLI tools
+        normalize_path_for_tools() {
+          local path="$1"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Convert Windows paths to POSIX format for CLI tools
+            echo "$path" | sed 's|\\|/|g' | sed 's|^\([A-Za-z]\):|/\1|'
+          else
+            echo "$path"
+          fi
+        }
+        
+        # Function to get native OS path format
+        get_native_path() {
+          local path="$1"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            # Convert back to Windows format for output
+            echo "$path" | sed 's|^/\([A-Za-z]\)|\1:|' | sed 's|/|\\|g'
+          else
+            echo "$path"
+          fi
+        }
+        
+        # Normalize path for CLI tools
+        normalized_dir=$(normalize_path_for_tools "$DESTINATION_DIR")
+        
+        echo "=== Environment Information ==="
+        echo "OS: $RUNNER_OS"
+        echo "Original destination: $DESTINATION_DIR"
+        echo "Normalized for tools: $normalized_dir"
+        echo "Version: $OPENDAQ_VERSION"
+        echo "Filename: $OPENDAQ_FILENAME"
+        echo
+        
+        # Create directory if it doesn't exist
+        mkdir -p "$normalized_dir"
+        
+        echo "=== Downloading release ==="
+        if gh release download "${OPENDAQ_VERSION}" \
+           --pattern "${OPENDAQ_FILENAME}" \
+           --dir "${normalized_dir}" \
+           --repo openDAQ/openDAQ; then
+          echo "✅ Download successful"
+        else
+          echo "❌ Download failed"
+          exit 1
+        fi
+        
+        echo
+        echo "=== Verifying download ==="
+        downloaded_file="${normalized_dir}/${OPENDAQ_FILENAME}"
+        
+        if [[ -f "$downloaded_file" ]]; then
+          # Cross-platform file size detection
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            file_size=$(stat -f%z "$downloaded_file")
+          else
+            file_size=$(stat -c%s "$downloaded_file")
+          fi
+          echo "✅ File verified: ${OPENDAQ_FILENAME} (${file_size} bytes)"
+        else
+          echo "❌ File not found: ${OPENDAQ_FILENAME}"
+          echo "Directory contents:"
+          ls -la "$normalized_dir"
+          exit 1
+        fi
+        
+        echo
+        echo "=== Directory contents ==="
+        ls -la "$normalized_dir"
+        
+        # Prepare paths for outputs (in native OS format)
+        native_dir=$(get_native_path "$DESTINATION_DIR")
+        native_full_path="${native_dir}${OPENDAQ_FILENAME}"
+        
+        # Windows needs proper path separator
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          native_full_path="${native_dir}\\${OPENDAQ_FILENAME}"
+        else
+          native_full_path="${native_dir}/${OPENDAQ_FILENAME}"
+        fi
+        
+        echo
+        echo "=== Setting outputs ==="
+        echo "artifact=${OPENDAQ_FILENAME}" >> "$GITHUB_OUTPUT"
+        echo "artifact-path=${native_full_path}" >> "$GITHUB_OUTPUT"
+        echo "artifact-dir=${native_dir}" >> "$GITHUB_OUTPUT"
+        
+        echo "Output variables set:"
+        echo "  artifact: ${OPENDAQ_FILENAME}"
+        echo "  artifact-path: ${native_full_path}"
+        echo "  artifact-dir: ${native_dir}"
+
+    # Compute standard SHA-256 hash for manual verification
+    - name: Compute standard SHA-256 hash
+      id: compute-file-hash
+      shell: bash
+      env:
+        ARTIFACT_PATH: ${{ steps.download-framework-artifact.outputs.artifact-path }}
+      run: |
+        echo "=== Computing standard SHA-256 hash ==="
+        
+        # Normalize path for file operations
+        normalize_path() {
+          local path="$1"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "$path" | sed 's|\\|/|g' | sed 's|^\([A-Za-z]\):|/\1|'
+          else
+            echo "$path"
+          fi
+        }
+        
+        normalized_path=$(normalize_path "$ARTIFACT_PATH")
+        echo "Computing SHA-256 for: $normalized_path"
+        
+        if [[ -f "$normalized_path" ]]; then
+          # Compute SHA-256 hash using available tools
+          if command -v sha256sum >/dev/null 2>&1; then
+            # Linux/Windows with Git Bash
+            file_sha256=$(sha256sum "$normalized_path" | cut -d' ' -f1)
+            echo "🔐 Standard SHA-256: $file_sha256"
+          elif command -v shasum >/dev/null 2>&1; then
+            # macOS
+            file_sha256=$(shasum -a 256 "$normalized_path" | cut -d' ' -f1)
+            echo "🔐 Standard SHA-256: $file_sha256"
+          else
+            echo "⚠️ SHA-256 tools not available"
+            file_sha256="unavailable"
+          fi
+          
+          echo "sha256=$file_sha256" >> "$GITHUB_OUTPUT"
+        else
+          echo "❌ File not found for hash computation"
+          echo "sha256=unavailable" >> "$GITHUB_OUTPUT"
+        fi
+
+    # Unix-specific verification with tree view
+    - name: Display results (Unix-specific)  
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        ARTIFACT_PATH: ${{ steps.download-framework-artifact.outputs.artifact-path }}
+        ARTIFACT_DIR: ${{ steps.download-framework-artifact.outputs.artifact-dir }}
+        ARTIFACT_NAME: ${{ steps.download-framework-artifact.outputs.artifact }}
+        ARTIFACT_SHA256: ${{ steps.compute-file-hash.outputs.sha256 }}
+      run: |
+        echo "=== Unix Shell Verification Tree ==="
+        
+        # Normalize path for bash
+        normalize_for_bash() {
+          local path="$1"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "$path" | sed 's|\\|/|g' | sed 's|^\([A-Za-z]\):|/\1|'
+          else
+            echo "$path"
+          fi
+        }
+        
+        bash_dir=$(normalize_for_bash "$ARTIFACT_DIR")
+        bash_path=$(normalize_for_bash "$ARTIFACT_PATH")
+        
+        # Tree structure
+        echo "📁 Directory: $bash_dir"
+        
+        if [[ -d "$bash_dir" ]]; then
+          echo "├── ✅ Directory exists"
+          
+          # Directory permissions
+          dir_perms=$(ls -ld "$bash_dir" 2>/dev/null | awk '{print $1}' || echo "unknown")
+          echo "├── 🔒 Directory permissions: $dir_perms"
+          
+          # Directory owner
+          dir_owner=$(ls -ld "$bash_dir" 2>/dev/null | awk '{print $3":"$4}' || echo "unknown")
+          echo "├── 👤 Directory owner: $dir_owner"
+          
+          echo "│"
+          echo "└── 📄 Artifact: $ARTIFACT_NAME"
+          
+          if [[ -f "$bash_path" ]]; then
+            echo "    ├── ✅ File exists"
+            
+            # File size
+            if [[ "$RUNNER_OS" == "macOS" ]]; then
+              file_size=$(stat -f%z "$bash_path" 2>/dev/null || echo "unknown")
+            else
+              file_size=$(stat -c%s "$bash_path" 2>/dev/null || echo "unknown")
+            fi
+            echo "    ├── 📊 Size: $file_size bytes"
+          
+            if [[ -n "$ARTIFACT_SHA256" && "$ARTIFACT_SHA256" != "unavailable" ]]; then
+              echo "    ├── 🔐 Standard SHA-256: $ARTIFACT_SHA256"
+            else
+              echo "    ├── 🔐 Standard SHA-256: ⚠️ Not available"
+            fi
+            
+            # File timestamps
+            if [[ "$RUNNER_OS" == "macOS" ]]; then
+              created=$(stat -f%SB "$bash_path" 2>/dev/null || echo "unknown")
+              modified=$(stat -f%Sm "$bash_path" 2>/dev/null || echo "unknown")
+            else
+              created=$(stat -c%w "$bash_path" 2>/dev/null | sed 's/\.[0-9]* / /' || echo "unknown")
+              modified=$(stat -c%y "$bash_path" 2>/dev/null | sed 's/\.[0-9]* / /' || echo "unknown")
+            fi
+            echo "    ├── 📅 Created: $created"
+            echo "    ├── 📅 Modified: $modified"
+            
+            # File permissions breakdown
+            file_perms=$(ls -l "$bash_path" 2>/dev/null | awk '{print $1}' || echo "unknown")
+            file_owner=$(ls -l "$bash_path" 2>/dev/null | awk '{print $3":"$4}' || echo "unknown")
+            
+            echo "    └── 🔒 Permissions:"
+            echo "        ├── Raw: $file_perms"
+            echo "        ├── Owner: $file_owner"
+            
+            if [[ "$file_perms" != "unknown" ]]; then
+              # Parse permissions
+              owner_perms=${file_perms:1:3}
+              group_perms=${file_perms:4:3}
+              other_perms=${file_perms:7:3}
+              
+              # Convert to readable format
+              parse_perms() {
+                local perm_str="$1"
+                local result=""
+                [[ "${perm_str:0:1}" == "r" ]] && result+="read " || result+="---- "
+                [[ "${perm_str:1:1}" == "w" ]] && result+="write " || result+="----- "
+                [[ "${perm_str:2:1}" == "x" ]] && result+="exec" || result+="----"
+                echo "$result"
+              }
+              
+              echo "        ├── Owner: $(parse_perms "$owner_perms")"
+              echo "        ├── Group: $(parse_perms "$group_perms")"
+              echo "        └── Other: $(parse_perms "$other_perms")"
+            else
+              echo "        └── Cannot parse permissions"
+            fi
+          else
+            echo "    └── ❌ File not found"
+          fi
+        else
+          echo "└── ❌ Directory not found"
+        fi
+
+    # Windows-specific verification with tree view
+    - name: Display results (Windows-specific)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        ARTIFACT_PATH: ${{ steps.download-framework-artifact.outputs.artifact-path }}
+        ARTIFACT_DIR: ${{ steps.download-framework-artifact.outputs.artifact-dir }}
+        ARTIFACT_NAME: ${{ steps.download-framework-artifact.outputs.artifact }}
+        ARTIFACT_SHA256: ${{ steps.compute-file-hash.outputs.sha256 }}
+      run: |
+        Write-Host "=== Windows PowerShell Verification Tree ==="
+        
+        # Parse directory and filename
+        $dirPath = $env:ARTIFACT_DIR
+        $fileName = $env:ARTIFACT_NAME
+        $fullPath = $env:ARTIFACT_PATH
+        $sha256 = $env:ARTIFACT_SHA256
+        
+        # Tree structure
+        Write-Host "📁 Directory: $dirPath"
+        
+        if (Test-Path $dirPath) {
+          Write-Host "├── ✅ Directory exists"
+          
+          # Directory permissions
+          $dirAcl = Get-Acl $dirPath -ErrorAction SilentlyContinue
+          if ($dirAcl) {
+            Write-Host "├── 🔒 Directory permissions: $($dirAcl.Access.Count) ACE entries"
+          }
+          
+          Write-Host "│"
+          Write-Host "└── 📄 Artifact: $fileName"
+          
+          if (Test-Path $fullPath) {
+            Write-Host "    ├── ✅ File exists"
+            
+            # File info
+            $fileInfo = Get-Item $fullPath -ErrorAction SilentlyContinue
+            if ($fileInfo) {
+              Write-Host "    ├── 📊 Size: $($fileInfo.Length) bytes"
+            
+              if ($sha256 -and $sha256 -ne "unavailable") {
+                Write-Host "    ├── 🔐 Standard SHA-256: $sha256"
+              } else {
+                Write-Host "    ├── 🔐 Standard SHA-256: ⚠️ Not available"
+              }
+              
+              Write-Host "    ├── 📅 Created: $($fileInfo.CreationTime)"
+              Write-Host "    ├── 📅 Modified: $($fileInfo.LastWriteTime)"
+              
+              # File permissions
+              $fileAcl = Get-Acl $fullPath -ErrorAction SilentlyContinue
+              if ($fileAcl) {
+                Write-Host "    └── 🔒 Permissions:"
+                $fileAcl.Access | Select-Object -First 3 | ForEach-Object {
+                  $identity = $_.IdentityReference.Value
+                  $rights = $_.FileSystemRights
+                  $type = $_.AccessControlType
+                  Write-Host "        └── $identity : $rights ($type)"
+                }
+                if ($fileAcl.Access.Count -gt 3) {
+                  Write-Host "        └── ... and $($fileAcl.Access.Count - 3) more entries"
+                }
+              } else {
+                Write-Host "    └── ❌ Cannot read permissions"
+              }
+            } else {
+              Write-Host "    └── ❌ Cannot read file info"
+            }
+          } else {
+            Write-Host "    └── ❌ File not found"
+          }
+        } else {
+          Write-Host "└── ❌ Directory not found"
+        }
