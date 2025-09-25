@@ -1,0 +1,187 @@
+name: "Call action manually: framework download release"
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner to use (e.g. ubuntu-latest, ubuntu-22.04, windows-latest, etc)"
+        type: string
+        required: false
+        default: ubuntu-latest
+      artifact:
+        type: string
+        required: false
+      version:
+        description: "Version (e.g. 3.20.2, v3.20.4, latest, etc)"
+        type: string
+        required: false
+        default: 'latest'
+      platform:
+        description: "Platform (e.g. ubuntu20.04-x86_64, ubuntu20.04-arm64, win32, win64)"
+        type: string
+        required: false
+        default: ubuntu20.04-x86_64
+
+jobs:
+  call-download:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download openDAQ framework
+        id: call-framework-download-release
+        uses: ./framework-download-release
+        with:
+          artifact: ${{ inputs.artifact }}
+          platform: ${{ inputs.platform }}
+          version: ${{ inputs.version }}
+
+      - name: Display download results summary
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_PLATFORM: ${{ inputs.platform }}
+          ARTIFACT_NAME: ${{ steps.call-framework-download-release.outputs.artifact }}
+          ARTIFACT_DIR: ${{ steps.call-framework-download-release.outputs.artifact-dir }}
+          ARTIFACT_PATH: ${{ steps.call-framework-download-release.outputs.artifact-path }}
+          ARTIFACT_SHA256: ${{ steps.call-framework-download-release.outputs.artifact-sha256 }}
+        run: |
+          echo "=== Workflow Summary ==="
+          echo "🖥️  Runner OS: $RUNNER_OS"
+          echo "🔧 Requested version: '$REQUESTED_VERSION'"
+          echo "🎯 Requested platform: '$REQUESTED_PLATFORM'"
+          echo "📦 Artifact name: '$ARTIFACT_NAME"''
+          echo "📂 Native directory: '$ARTIFACT_DIR'"
+          echo "📍 Native path: '$ARTIFACT_PATH'"
+          echo "🔐 Standard SHA-256: '$ARTIFACT_SHA256'"
+          echo
+          
+          # Validate all outputs
+          validation_failed=false
+          
+          if [[ -z "$ARTIFACT_NAME" ]]; then
+            echo "::error::❌ Artifact name is empty"
+            validation_failed=true
+          fi
+          
+          if [[ -z "$ARTIFACT_DIR" ]]; then
+            echo "::error::❌ Artifact directory is empty"
+            validation_failed=true
+          fi
+          
+          if [[ -z "$ARTIFACT_PATH" ]]; then
+            echo "::error::❌ Artifact path is empty"
+            validation_failed=true
+          fi
+          
+          # Exit early if basic validation failed
+          if [[ "$validation_failed" == "true" ]]; then
+            echo "::error::❌ Basic output validation failed"
+            exit 1
+          fi
+          
+          echo "=== File Existence Check ==="
+          
+          # Robust path normalization function
+          normalize_for_bash() {
+            local path="$1"
+            
+            # Handle empty path
+            if [[ -z "$path" ]]; then
+              echo ""
+              return
+            fi
+            
+            # Detect and convert Windows paths
+            if [[ "$path" =~ ^[A-Za-z]:[/\\] ]] || [[ "$RUNNER_OS" == "Windows" ]]; then
+              # Convert Windows path to POSIX for bash
+              echo "$path" | sed 's|\\|/|g' | sed 's|^\([A-Za-z]\):|/\1|'
+            else
+              echo "$path"
+            fi
+          }
+          
+          # Normalize path for file operations
+          bash_artifact_path=$(normalize_for_bash "$ARTIFACT_PATH")
+          
+          echo "Original path: $ARTIFACT_PATH"
+          echo "Normalized path: $bash_artifact_path"
+          
+          # Try multiple path variations
+          test_paths=()
+          
+          # Add the main paths
+          [[ -n "$ARTIFACT_PATH" ]] && test_paths+=("$ARTIFACT_PATH")
+          [[ -n "$bash_artifact_path" ]] && test_paths+=("$bash_artifact_path")
+          
+          # Construct path from directory + filename if available
+          if [[ -n "$ARTIFACT_DIR" ]] && [[ -n "$ARTIFACT_NAME" ]]; then
+            # Native format
+            if [[ "$RUNNER_OS" == "Windows" ]]; then
+              constructed_native="${ARTIFACT_DIR}\\${ARTIFACT_NAME}"
+            else
+              constructed_native="${ARTIFACT_DIR}/${ARTIFACT_NAME}"
+            fi
+            test_paths+=("$constructed_native")
+            
+            # POSIX format
+            normalized_dir=$(normalize_for_bash "$ARTIFACT_DIR")
+            if [[ -n "$normalized_dir" ]]; then
+              constructed_posix="${normalized_dir}/${ARTIFACT_NAME}"
+              test_paths+=("$constructed_posix")
+            fi
+          fi
+          
+          # Test each path
+          found_file=""
+          echo "Testing file existence:"
+          
+          for test_path in "${test_paths[@]}"; do
+            if [[ -n "$test_path" ]]; then
+              echo "  Checking: '$test_path'"
+              if [[ -f "$test_path" ]]; then
+                echo "  ✅ Found!"
+                found_file="$test_path"
+                break
+              else
+                echo "  ❌ Not found"
+              fi
+            fi
+          done
+          
+          if [[ -n "$found_file" ]]; then
+            echo
+            echo "✅ Download action completed successfully!"
+            echo "📄 File found at: $found_file"
+            
+            # Show file info
+            if [[ "$RUNNER_OS" == "macOS" ]]; then
+              file_size=$(stat -f%z "$found_file" 2>/dev/null || echo "unknown")
+            else
+              file_size=$(stat -c%s "$found_file" 2>/dev/null || echo "unknown")
+            fi
+            echo "📊 File size: $file_size bytes"
+            
+          else
+            echo
+            echo "::error::❌ Artifact file not found in any tested location!"
+            echo "Tested paths:"
+            for test_path in "${test_paths[@]}"; do
+              echo "  - '$test_path'"
+            done
+            
+            # Debug: show directory contents
+            if [[ -n "$ARTIFACT_DIR" ]]; then
+              normalized_dir=$(normalize_for_bash "$ARTIFACT_DIR")
+              echo
+              echo "Directory contents of '$normalized_dir':"
+              if [[ -d "$normalized_dir" ]]; then
+                ls -la "$normalized_dir" 2>/dev/null || echo "Cannot list directory contents"
+              else
+                echo "Directory does not exist or is not accessible"
+              fi
+            fi
+            
+            exit 1
+          fi
