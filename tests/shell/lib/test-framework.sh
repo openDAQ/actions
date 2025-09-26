@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# test-framework.sh - Reusable testing framework for openDAQ scripts
+# test-framework.sh - Enhanced reusable testing framework for openDAQ scripts
 # Compatible with Bash 3.x and macOS
+# Now supports hierarchical filtering: positive specification -> exclusions -> regex filter
 
 # Global test state
 TOTAL_TESTS=0
@@ -9,7 +10,12 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 CURRENT_SUITE=""
 SCRIPT_PATH=""
-TEST_FILTER=""
+
+# Filtering state
+POSITIVE_TESTS=""        # Comma-separated list of specific tests to include
+EXCLUDED_TESTS=""        # Comma-separated list of tests to exclude
+REGEX_FILTER=""          # Regex pattern filter
+FILTERING_ENABLED=false  # Whether any filtering is active
 
 # Colors for output (if terminal supports it)
 if [ -t 1 ] && command -v tput >/dev/null 2>&1; then
@@ -30,14 +36,25 @@ fi
 test_framework_init() {
     local script_path="$1"
     local suite_name="$2"
-    local filter="${3:-}"
+    local positive_tests="${3:-}"      # suite:test1,test2 format
+    local excluded_tests="${4:-}"      # comma-separated excluded tests
+    local regex_filter="${5:-}"        # regex pattern
     
     SCRIPT_PATH="$script_path"
     CURRENT_SUITE="$suite_name"
-    TEST_FILTER="$filter"
+    POSITIVE_TESTS="$positive_tests"
+    EXCLUDED_TESTS="$excluded_tests"
+    REGEX_FILTER="$regex_filter"
     TOTAL_TESTS=0
     PASSED_TESTS=0
     FAILED_TESTS=0
+    
+    # Determine if filtering is enabled
+    if [ -n "$positive_tests" ] || [ -n "$excluded_tests" ] || [ -n "$regex_filter" ]; then
+        FILTERING_ENABLED=true
+    else
+        FILTERING_ENABLED=false
+    fi
     
     # Check if script exists and is executable
     if [ ! -f "$SCRIPT_PATH" ]; then
@@ -56,9 +73,74 @@ test_framework_init() {
     
     echo "${BLUE}Testing: $SCRIPT_PATH${RESET}"
     echo "${BLUE}Suite: $CURRENT_SUITE${RESET}"
-    if [ -n "$TEST_FILTER" ]; then
-        echo "${BLUE}Filter: $TEST_FILTER${RESET}"
+    
+    if [ "$FILTERING_ENABLED" = true ]; then
+        echo "${BLUE}Filtering enabled:${RESET}"
+        if [ -n "$positive_tests" ]; then
+            echo "${BLUE}  - Positive tests: $positive_tests${RESET}"
+        fi
+        if [ -n "$excluded_tests" ]; then
+            echo "${BLUE}  - Excluded tests: $excluded_tests${RESET}"
+        fi
+        if [ -n "$regex_filter" ]; then
+            echo "${BLUE}  - Regex filter: $regex_filter${RESET}"
+        fi
     fi
+}
+
+# Check if a test should be executed based on hierarchical filtering
+should_run_test() {
+    local test_name="$1"
+    
+    # If no filtering enabled, run all tests
+    if [ "$FILTERING_ENABLED" != true ]; then
+        return 0
+    fi
+    
+    # Step 1: Check positive specification (highest priority)
+    if [ -n "$POSITIVE_TESTS" ]; then
+        local found_in_positive=false
+        local old_ifs="$IFS"
+        IFS=','
+        for positive_test in $POSITIVE_TESTS; do
+            # Remove any leading/trailing whitespace
+            positive_test=$(echo "$positive_test" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ "$positive_test" = "$test_name" ]; then
+                found_in_positive=true
+                break
+            fi
+        done
+        IFS="$old_ifs"
+        
+        # If positive list exists but test not in it, skip
+        if [ "$found_in_positive" != true ]; then
+            return 1
+        fi
+    fi
+    
+    # Step 2: Check exclusions
+    if [ -n "$EXCLUDED_TESTS" ]; then
+        local old_ifs="$IFS"
+        IFS=','
+        for excluded_test in $EXCLUDED_TESTS; do
+            # Remove any leading/trailing whitespace
+            excluded_test=$(echo "$excluded_test" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ "$excluded_test" = "$test_name" ]; then
+                IFS="$old_ifs"
+                return 1  # Skip excluded test
+            fi
+        done
+        IFS="$old_ifs"
+    fi
+    
+    # Step 3: Check regex filter
+    if [ -n "$REGEX_FILTER" ]; then
+        if ! echo "$test_name" | grep -qE "$REGEX_FILTER"; then
+            return 1  # Skip if doesn't match regex
+        fi
+    fi
+    
+    return 0  # Run the test
 }
 
 # Test helper functions
@@ -69,8 +151,8 @@ run_test() {
     local version_input="$4"
     shift 4
     
-    # Check if test matches filter
-    if [ -n "$TEST_FILTER" ] && ! echo "$test_name" | grep -qE "$TEST_FILTER"; then
+    # Check hierarchical filtering
+    if ! should_run_test "$test_name"; then
         return 0  # Skip this test silently
     fi
     
@@ -117,8 +199,8 @@ run_test_contains() {
     local version_input="$4"
     shift 4
     
-    # Check if test matches filter
-    if [ -n "$TEST_FILTER" ] && ! echo "$test_name" | grep -qE "$TEST_FILTER"; then
+    # Check hierarchical filtering
+    if ! should_run_test "$test_name"; then
         return 0  # Skip this test silently
     fi
     
@@ -160,8 +242,8 @@ run_test_multiline() {
     local version_input="$3"
     shift 3
     
-    # Check if test matches filter
-    if [ -n "$TEST_FILTER" ] && ! echo "$test_name" | grep -qE "$TEST_FILTER"; then
+    # Check hierarchical filtering
+    if ! should_run_test "$test_name"; then
         return 0  # Skip this test silently
     fi
     
@@ -195,8 +277,8 @@ run_test_no_input() {
     local expected_output="$3"
     shift 3
     
-    # Check if test matches filter
-    if [ -n "$TEST_FILTER" ] && ! echo "$test_name" | grep -qE "$TEST_FILTER"; then
+    # Check hierarchical filtering
+    if ! should_run_test "$test_name"; then
         return 0  # Skip this test silently
     fi
     
@@ -229,8 +311,8 @@ run_test_no_input_contains() {
     local expected_substring="$3"
     shift 3
     
-    # Check if test matches filter
-    if [ -n "$TEST_FILTER" ] && ! echo "$test_name" | grep -qE "$TEST_FILTER"; then
+    # Check hierarchical filtering
+    if ! should_run_test "$test_name"; then
         return 0  # Skip this test silently
     fi
     
@@ -286,6 +368,21 @@ test_framework_summary() {
         return 1
     else
         echo "${RED}Failed: $FAILED_TESTS${RESET}"
+        
+        # Warning if no tests were executed due to filtering
+        if [ $TOTAL_TESTS -eq 0 ] && [ "$FILTERING_ENABLED" = true ]; then
+            echo "${YELLOW}Warning: No tests matched the filtering criteria${RESET}"
+            if [ -n "$POSITIVE_TESTS" ]; then
+                echo "${YELLOW}  Positive filter: $POSITIVE_TESTS${RESET}"
+            fi
+            if [ -n "$EXCLUDED_TESTS" ]; then
+                echo "${YELLOW}  Excluded tests: $EXCLUDED_TESTS${RESET}"
+            fi
+            if [ -n "$REGEX_FILTER" ]; then
+                echo "${YELLOW}  Regex filter: $REGEX_FILTER${RESET}"
+            fi
+        fi
+        
         return 0
     fi
 }
@@ -300,4 +397,10 @@ test_framework_reset() {
     TOTAL_TESTS=0
     PASSED_TESTS=0
     FAILED_TESTS=0
+}
+
+# Utility function to list all test names in current suite (for debugging/inspection)
+list_available_tests() {
+    echo "Available test functions in current context:"
+    declare -F | grep -E '^declare -f (run_test|test_)' | sed 's/declare -f /  /'
 }

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# test-runner.sh - Main test runner for openDAQ scripts
+# test-runner.sh - Enhanced test runner for openDAQ scripts with hierarchical filtering
 # Compatible with Bash 3.x and macOS
 
 # Configuration
@@ -16,6 +16,11 @@ GRAND_TOTAL_TESTS=0
 GRAND_PASSED_TESTS=0
 GRAND_FAILED_TESTS=0
 
+# Global filtering options
+GLOBAL_EXCLUDED_SUITES=""
+GLOBAL_EXCLUDED_TESTS=""
+GLOBAL_REGEX_FILTER=""
+
 # Load the test framework
 if [ -f "$LIB_DIR/test-framework.sh" ]; then
     source "$LIB_DIR/test-framework.sh"
@@ -28,13 +33,19 @@ fi
 show_runner_help() {
     cat << 'EOF'
 NAME
-    test-runner.sh - Main test runner for openDAQ scripts
+    test-runner.sh - Enhanced test runner for openDAQ scripts with hierarchical filtering
 
 SYNOPSIS
-    test-runner.sh [OPTIONS] [SUITE...]
+    test-runner.sh [OPTIONS] [SUITE[:TESTS]...]
 
 DESCRIPTION
-    Run test suites for openDAQ scripts. Can run specific suites or all available suites.
+    Run test suites for openDAQ scripts with advanced filtering capabilities.
+    Supports hierarchical filtering: positive specification → exclusions → regex filter.
+
+FILTERING HIERARCHY (by priority):
+    1. Positive specification: suite:test1,test2 (highest priority)
+    2. Exclusions: --exclude-suite, --exclude-test  
+    3. Regex filter: --filter "pattern" (lowest priority)
 
 OPTIONS
     -h, --help              Show this help message
@@ -42,40 +53,78 @@ OPTIONS
     -v, --verbose           Verbose output
     --scripts-dir DIR       Directory containing scripts to test (default: parent dir)
     --continue-on-fail      Continue running suites even if one fails
-    --filter PATTERN        Run only tests matching pattern (regex)
-    --list-tests SUITE      List all tests in a specific suite
+    --filter PATTERN        Run only tests matching regex pattern
+    --exclude-suite SUITE   Exclude specific test suite(s) - comma separated
+    --exclude-test TEST     Exclude specific test(s) from all suites - comma separated
+    --list-tests [SUITE]    List all tests in suite(s) or all suites if none specified
 
 ARGUMENTS
-    SUITE                   Specific test suite to run (without test- prefix)
+    SUITE[:TESTS]           Test suite with optional specific tests
+                           SUITE - run all tests in suite
+                           SUITE:test1,test2 - run only specified tests in suite
                            If no suites specified, runs all available suites
 
 EXAMPLES
+    # Basic usage
     test-runner.sh
         Run all available test suites
 
     test-runner.sh opendaq-version-parse
-        Run only the opendaq-version-parse test suite
+        Run all tests in opendaq-version-parse suite
 
-    test-runner.sh opendaq-version-parse opendaq-version-compose
-        Run multiple specific test suites
+    # Positive specification (highest priority)
+    test-runner.sh opendaq-version-parse:major,validation
+        Run only "major" and "validation" tests in opendaq-version-parse suite
 
-    test-runner.sh opendaq-version-parse --filter "extract.*major"
-        Run only tests matching pattern in opendaq-version-parse suite
+    test-runner.sh version-parse:basic,format version-compose:simple
+        Run specific tests from multiple suites
 
-    test-runner.sh --filter "validation" 
-        Run tests matching "validation" in all suites
+    # Exclusions (second priority)  
+    test-runner.sh --exclude-suite opendaq-version-compose
+        Run all suites except opendaq-version-compose
+
+    test-runner.sh --exclude-test "flaky-test,slow-test"
+        Run all tests except those named "flaky-test" or "slow-test"
+
+    test-runner.sh opendaq-version-parse --exclude-test "edge-case"
+        Run opendaq-version-parse suite excluding "edge-case" test
+
+    # Regex filtering (lowest priority)
+    test-runner.sh --filter "extract.*format"
+        Run tests matching regex pattern in all suites
+
+    test-runner.sh opendaq-version-parse --filter "validation|verbose"
+        Run tests matching "validation" OR "verbose" in opendaq-version-parse
+
+    # Combined filtering (follows hierarchy)
+    test-runner.sh version-parse:validation,format version-compose \
+      --exclude-test "slow-test" \
+      --filter "verbose"
+        1. Include only "validation,format" from version-parse + all from version-compose
+        2. Exclude any tests named "slow-test"  
+        3. From remaining, only run tests matching "verbose"
+
+    # Investigation and debugging
+    test-runner.sh --list-tests
+        List all test names in all suites
 
     test-runner.sh --list-tests opendaq-version-parse
-        List all test names in opendaq-version-parse suite
+        List all test names in specific suite
 
     test-runner.sh --list
         List all available test suites
+
+FILTERING LOGIC:
+    1. If SUITE:TESTS specified → only those tests from that suite are candidates
+    2. Apply --exclude-test → remove excluded tests from candidates  
+    3. Apply --filter regex → keep only tests matching pattern
+    4. Show warning if final list is empty
 
 DIRECTORY STRUCTURE
     tests/
     ├── test-runner.sh              # This script
     ├── lib/
-    │   └── test-framework.sh       # Test framework library
+    │   └── test-framework.sh       # Enhanced test framework library
     ├── suites/
     │   ├── test-opendaq-version-parse.sh
     │   └── test-opendaq-version-compose.sh
@@ -85,7 +134,7 @@ DIRECTORY STRUCTURE
 
 EXIT STATUS
     0       All test suites passed
-    1       One or more test suites failed
+    1       One or more test suites failed  
     2       Configuration or setup error
 
 EOF
@@ -103,29 +152,97 @@ list_suites() {
     done
 }
 
-# List tests in a specific suite
-list_tests_in_suite() {
-    local suite_name="$1"
-    
-    # Clean suite name
-    suite_name=$(basename "$suite_name")
-    if ! echo "$suite_name" | grep -q "^test-"; then
-        suite_name="test-${suite_name}"
-    fi
-    
-    local suite_file="$SUITES_DIR/${suite_name}.sh"
+# Extract test names from a suite file
+extract_test_names_from_suite() {
+    local suite_file="$1"
     
     if [ ! -f "$suite_file" ]; then
-        echo "Error: Test suite not found: $suite_file"
-        echo "Available suites:"
-        list_suites
         return 1
     fi
     
-    echo "Tests in suite '$suite_name':"
-    grep -E '^\s*run_test.*"[^"]*"' "$suite_file" | \
-        sed -E 's/.*run_test[^"]*"([^"]*)".*$/  \1/' | \
-        sort
+    # Extract test names from run_test* function calls
+    grep -E '^\s*run_test[^"]*"[^"]*"' "$suite_file" | \
+        sed -E 's/.*run_test[^"]*"([^"]*)".*$/\1/' | \
+        sort | uniq
+}
+
+# List tests in specific suite(s) or all suites
+list_tests_in_suites() {
+    local target_suites=("$@")
+    
+    # If no suites specified, list all
+    if [ ${#target_suites[@]} -eq 0 ]; then
+        echo "All available tests by suite:"
+        for suite_file in "$SUITES_DIR"/test-*.sh; do
+            if [ -f "$suite_file" ]; then
+                local suite_name=$(basename "$suite_file" .sh)
+                suite_name=${suite_name#test-}
+                echo
+                echo "Suite: $suite_name"
+                extract_test_names_from_suite "$suite_file" | sed 's/^/  /'
+            fi
+        done
+        return 0
+    fi
+    
+    # List tests for specified suites
+    for suite_spec in "${target_suites[@]}"; do
+        # Clean suite name - remove test- prefix if present
+        local suite_name=$(basename "$suite_spec")
+        if ! echo "$suite_name" | grep -q "^test-"; then
+            suite_name="test-${suite_name}"
+        fi
+        
+        local suite_file="$SUITES_DIR/${suite_name}.sh"
+        
+        if [ ! -f "$suite_file" ]; then
+            echo "Error: Test suite not found: $suite_file"
+            continue
+        fi
+        
+        echo "Tests in suite '${suite_name#test-}':"
+        extract_test_names_from_suite "$suite_file" | sed 's/^/  /'
+        echo
+    done
+}
+
+# Parse suite specification (suite:test1,test2)
+parse_suite_spec() {
+    local suite_spec="$1"
+    local suite_name=""
+    local test_list=""
+    
+    if echo "$suite_spec" | grep -q ":"; then
+        suite_name=$(echo "$suite_spec" | cut -d: -f1)
+        test_list=$(echo "$suite_spec" | cut -d: -f2-)
+    else
+        suite_name="$suite_spec"
+        test_list=""
+    fi
+    
+    echo "$suite_name|$test_list"
+}
+
+# Check if suite should be excluded
+is_suite_excluded() {
+    local suite_name="$1"
+    
+    if [ -z "$GLOBAL_EXCLUDED_SUITES" ]; then
+        return 1  # Not excluded
+    fi
+    
+    local old_ifs="$IFS"
+    IFS=','
+    for excluded_suite in $GLOBAL_EXCLUDED_SUITES; do
+        excluded_suite=$(echo "$excluded_suite" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        if [ "$excluded_suite" = "$suite_name" ]; then
+            IFS="$old_ifs"
+            return 0  # Excluded
+        fi
+    done
+    IFS="$old_ifs"
+    
+    return 1  # Not excluded
 }
 
 # Find script path for a given suite
@@ -159,15 +276,26 @@ find_script_path() {
     return 1
 }
 
-# Run a single test suite
+# Run a single test suite with filtering
 run_suite() {
-    local suite_name="$1"
+    local suite_spec="$1"
     local scripts_dir="$2"
     local verbose="$3"
-    local filter="$4"
+    
+    # Parse suite specification
+    local parsed
+    parsed=$(parse_suite_spec "$suite_spec")
+    local suite_name=$(echo "$parsed" | cut -d'|' -f1)
+    local positive_tests=$(echo "$parsed" | cut -d'|' -f2)
     
     # Clean suite name - remove any path prefixes
     suite_name=$(basename "$suite_name")
+    
+    # Check if suite is excluded
+    if is_suite_excluded "$suite_name"; then
+        echo "${YELLOW}Skipping excluded suite: $suite_name${RESET}"
+        return 0
+    fi
     
     local suite_file="$SUITES_DIR/${suite_name}.sh"
     
@@ -201,8 +329,8 @@ run_suite() {
     echo "${BLUE}         Running Suite: $suite_name       ${RESET}"
     echo "${BLUE}===========================================${RESET}"
     
-    # Initialize test framework for this suite
-    if ! test_framework_init "$script_path" "$suite_name" "$filter"; then
+    # Initialize test framework for this suite with hierarchical filtering
+    if ! test_framework_init "$script_path" "$suite_name" "$positive_tests" "$GLOBAL_EXCLUDED_TESTS" "$GLOBAL_REGEX_FILTER"; then
         return 1
     fi
     
@@ -264,6 +392,21 @@ print_grand_summary() {
             echo "${GREEN}All tests passed! 🎉${RESET}"
         else
             echo "${YELLOW}No tests were executed.${RESET}"
+            
+            # Provide helpful hints about why no tests ran
+            if [ -n "$GLOBAL_EXCLUDED_SUITES" ] || [ -n "$GLOBAL_EXCLUDED_TESTS" ] || [ -n "$GLOBAL_REGEX_FILTER" ]; then
+                echo "${YELLOW}This might be due to filtering:${RESET}"
+                if [ -n "$GLOBAL_EXCLUDED_SUITES" ]; then
+                    echo "${YELLOW}  - Excluded suites: $GLOBAL_EXCLUDED_SUITES${RESET}"
+                fi
+                if [ -n "$GLOBAL_EXCLUDED_TESTS" ]; then
+                    echo "${YELLOW}  - Excluded tests: $GLOBAL_EXCLUDED_TESTS${RESET}"
+                fi
+                if [ -n "$GLOBAL_REGEX_FILTER" ]; then
+                    echo "${YELLOW}  - Regex filter: $GLOBAL_REGEX_FILTER${RESET}"
+                fi
+                echo "${YELLOW}Try running with --list-tests to see available tests${RESET}"
+            fi
         fi
     fi
 }
@@ -273,8 +416,7 @@ main() {
     local scripts_dir="$SCRIPT_DIR/.."
     local verbose=false
     local continue_on_fail=false
-    local test_filter=""
-    local list_tests_suite=""
+    local list_tests_suites=()
     local suites_to_run=()
     
     # Parse arguments
@@ -309,16 +451,34 @@ main() {
                     echo "Error: --filter requires a pattern argument"
                     exit 2
                 fi
-                test_filter="$2"
+                GLOBAL_REGEX_FILTER="$2"
+                shift 2
+                ;;
+            --exclude-suite)
+                if [ $# -lt 2 ]; then
+                    echo "Error: --exclude-suite requires suite name(s)"
+                    exit 2
+                fi
+                GLOBAL_EXCLUDED_SUITES="$2"
+                shift 2
+                ;;
+            --exclude-test)
+                if [ $# -lt 2 ]; then
+                    echo "Error: --exclude-test requires test name(s)"
+                    exit 2
+                fi
+                GLOBAL_EXCLUDED_TESTS="$2"
                 shift 2
                 ;;
             --list-tests)
-                if [ $# -lt 2 ]; then
-                    echo "Error: --list-tests requires a suite name"
-                    exit 2
+                # Check if next argument is a suite name or another option
+                if [ $# -gt 1 ] && ! echo "$2" | grep -q "^-"; then
+                    list_tests_suites+=("$2")
+                    shift 2
+                else
+                    # No suite specified, list all
+                    shift
                 fi
-                list_tests_suite="$2"
-                shift 2
                 ;;
             -*)
                 echo "Unknown option: $1"
@@ -333,8 +493,8 @@ main() {
     done
     
     # Handle --list-tests
-    if [ -n "$list_tests_suite" ]; then
-        list_tests_in_suite "$list_tests_suite"
+    if [ ${#list_tests_suites[@]} -gt 0 ] || [[ " $* " == *" --list-tests "* ]]; then
+        list_tests_in_suites "${list_tests_suites[@]}"
         exit $?
     fi
     
@@ -344,13 +504,20 @@ main() {
             if [ -f "$suite_file" ]; then
                 local suite_name=$(basename "$suite_file" .sh)
                 suite_name=${suite_name#test-}
-                suites_to_run+=("$suite_name")
+                
+                # Check if suite is excluded
+                if ! is_suite_excluded "$suite_name"; then
+                    suites_to_run+=("$suite_name")
+                fi
             fi
         done
     fi
     
     if [ ${#suites_to_run[@]} -eq 0 ]; then
         echo "No test suites found in $SUITES_DIR"
+        if [ -n "$GLOBAL_EXCLUDED_SUITES" ]; then
+            echo "Note: Some suites may have been excluded: $GLOBAL_EXCLUDED_SUITES"
+        fi
         echo "Use --list to see available suites"
         exit 2
     fi
@@ -360,8 +527,32 @@ main() {
     echo "${BLUE}===========================================${RESET}"
     echo "Scripts directory: $scripts_dir"
     echo "Test suites to run: ${suites_to_run[*]}"
-    if [ -n "$test_filter" ]; then
-        echo "Test filter: $test_filter"
+    
+    # Show active filters
+    local filters_active=false
+    if [ -n "$GLOBAL_EXCLUDED_SUITES" ]; then
+        echo "Excluded suites: $GLOBAL_EXCLUDED_SUITES"
+        filters_active=true
+    fi
+    if [ -n "$GLOBAL_EXCLUDED_TESTS" ]; then
+        echo "Excluded tests: $GLOBAL_EXCLUDED_TESTS"
+        filters_active=true
+    fi
+    if [ -n "$GLOBAL_REGEX_FILTER" ]; then
+        echo "Regex filter: $GLOBAL_REGEX_FILTER"
+        filters_active=true
+    fi
+    
+    # Check for positive specifications in suite names
+    for suite in "${suites_to_run[@]}"; do
+        if echo "$suite" | grep -q ":"; then
+            echo "Positive test specification detected in: $suite"
+            filters_active=true
+        fi
+    done
+    
+    if [ "$filters_active" = true ]; then
+        echo "${YELLOW}Filtering is active - some tests may be skipped${RESET}"
     fi
     echo
     
@@ -370,7 +561,7 @@ main() {
     local overall_success=true
     
     for suite in "${suites_to_run[@]}"; do
-        if run_suite "$suite" "$scripts_dir" "$verbose" "$test_filter"; then
+        if run_suite "$suite" "$scripts_dir" "$verbose"; then
             if [ "$verbose" = true ]; then
                 echo "${GREEN}✓ Suite '$suite' completed successfully${RESET}"
             fi
