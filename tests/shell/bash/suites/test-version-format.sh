@@ -1,7 +1,7 @@
 #!/bin/bash
 ################################################################################
 # Test Suite: version-format
-# Version: 2.0.0
+# Version: 2.0.1
 # Description: Comprehensive test suite for version-format.sh script
 #
 # This suite tests all functionality of version-format.sh including:
@@ -23,6 +23,12 @@
 #   - Removed explicit function calls at end of file
 #   - Filtering by function name, not string descriptions
 ################################################################################
+
+# # Zsh compatibility
+# if [ -n "$ZSH_VERSION" ]; then
+#     setopt SH_WORD_SPLIT
+#     setopt KSH_ARRAYS
+# fi
 
 ################################################################################
 # SUITE SETUP/TEARDOWN (optional)
@@ -63,7 +69,7 @@ test_version_output() {
 }
 
 test_help_short() {
-    daq_testing_assert_no_input_contains 0 "USAGE:" ""
+    daq_testing_assert_no_args_contains 0 "USAGE:"
 }
 
 test_help_full() {
@@ -159,35 +165,35 @@ test_detect_format_X_YY_Z_rc_HASH() {
 ################################################################################
 
 test_validate_release() {
-    daq_testing_assert_exit_code 0 "v3.14.2" validate
+    daq_testing_assert_exit_code 0 validate "v3.14.2"
 }
 
 test_validate_rc() {
-    daq_testing_assert_exit_code 0 "v3.14.2-rc" validate
+    daq_testing_assert_exit_code 0 validate "v3.14.2-rc"
 }
 
 test_validate_dev() {
-    daq_testing_assert_exit_code 0 "v3.14.2-abc123f" validate
+    daq_testing_assert_exit_code 0 validate "v3.14.2-abc123f"
 }
 
 test_validate_rc_dev() {
-    daq_testing_assert_exit_code 0 "v3.14.2-rc-abc123f" validate
+    daq_testing_assert_exit_code 0 validate "v3.14.2-rc-abc123f"
 }
 
 test_validate_without_prefix() {
-    daq_testing_assert_exit_code 0 "3.14.2" validate
+    daq_testing_assert_exit_code 0 validate "3.14.2"
 }
 
 test_validate_fails_incomplete() {
-    daq_testing_assert_exit_code 1 "3.14" validate
+    daq_testing_assert_exit_code 1 validate "3.14"
 }
 
 test_validate_fails_invalid_chars() {
-    daq_testing_assert_exit_code 1 "3.14.2x" validate
+    daq_testing_assert_exit_code 1 validate "3.14.2x"
 }
 
 test_validate_fails_empty() {
-    daq_testing_assert_exit_code 1 "" validate
+    daq_testing_assert_exit_code 1 validate ""
 }
 
 ################################################################################
@@ -195,51 +201,51 @@ test_validate_fails_empty() {
 ################################################################################
 
 test_check_is_release_true() {
-    daq_testing_assert_exit_code 0 "v3.14.2" validate --is-release
+    daq_testing_assert_exit_code 0 validate "v3.14.2" --is-release
 }
 
 test_check_is_release_false_for_rc() {
-    daq_testing_assert_exit_code 1 "v3.14.2-rc" validate --is-release
+    daq_testing_assert_exit_code 1 validate "v3.14.2-rc" --is-release
 }
 
 test_check_is_rc_true() {
-    daq_testing_assert_exit_code 0 "v3.14.2-rc" validate --is-rc
+    daq_testing_assert_exit_code 0 validate "v3.14.2-rc" --is-rc
 }
 
 test_check_is_rc_false() {
-    daq_testing_assert_exit_code 1 "v3.14.2" validate --is-rc
+    daq_testing_assert_exit_code 1 validate "v3.14.2" --is-rc
 }
 
 test_check_is_dev_true() {
-    daq_testing_assert_exit_code 0 "v3.14.2-abc123f" validate --is-dev
+    daq_testing_assert_exit_code 0 validate "v3.14.2-abc123f" --is-dev
 }
 
 test_check_is_dev_false() {
-    daq_testing_assert_exit_code 1 "v3.14.2" validate --is-dev
+    daq_testing_assert_exit_code 1 validate "v3.14.2" --is-dev
 }
 
 test_check_has_prefix_true() {
-    daq_testing_assert_exit_code 0 "v3.14.2" validate --has-prefix
+    daq_testing_assert_exit_code 0 validate "v3.14.2" --has-prefix
 }
 
 test_check_has_prefix_false() {
-    daq_testing_assert_exit_code 1 "3.14.2" validate --has-prefix
+    daq_testing_assert_exit_code 1 validate "3.14.2" --has-prefix
 }
 
 test_check_has_suffix_true() {
-    daq_testing_assert_exit_code 0 "v3.14.2-rc" validate --has-suffix
+    daq_testing_assert_exit_code 0 validate "v3.14.2-rc" --has-suffix
 }
 
 test_check_has_suffix_false() {
-    daq_testing_assert_exit_code 1 "v3.14.2" validate --has-suffix
+    daq_testing_assert_exit_code 1 validate "v3.14.2" --has-suffix
 }
 
 test_check_has_hash_true() {
-    daq_testing_assert_exit_code 0 "v3.14.2-abc123f" validate --has-hash
+    daq_testing_assert_exit_code 0 validate "v3.14.2-abc123f" --has-hash
 }
 
 test_check_has_hash_false() {
-    daq_testing_assert_exit_code 1 "v3.14.2" validate --has-hash
+    daq_testing_assert_exit_code 1 validate "v3.14.2" --has-hash
 }
 
 ################################################################################
@@ -247,39 +253,39 @@ test_check_has_hash_false() {
 ################################################################################
 
 test_format_X_YY_Z_matches() {
-    daq_testing_assert_exit_code 0 "3.14.2" validate --format "X.YY.Z"
+    daq_testing_assert_exit_code 0 validate "3.14.2" --format "X.YY.Z"
 }
 
 test_format_vX_YY_Z_matches() {
-    daq_testing_assert_exit_code 0 "v3.14.2" validate --format "vX.YY.Z"
+    daq_testing_assert_exit_code 0 validate "v3.14.2" --format "vX.YY.Z"
 }
 
 test_format_X_YY_Z_rc_matches() {
-    daq_testing_assert_exit_code 0 "3.14.2-rc" validate --format "X.YY.Z-rc"
+    daq_testing_assert_exit_code 0 validate "3.14.2-rc" --format "X.YY.Z-rc"
 }
 
 test_format_vX_YY_Z_rc_matches() {
-    daq_testing_assert_exit_code 0 "v3.14.2-rc" validate --format "vX.YY.Z-rc"
+    daq_testing_assert_exit_code 0 validate "v3.14.2-rc" --format "vX.YY.Z-rc"
 }
 
 test_format_X_YY_Z_HASH_matches() {
-    daq_testing_assert_exit_code 0 "3.14.2-abc123f" validate --format "X.YY.Z-HASH"
+    daq_testing_assert_exit_code 0 validate "3.14.2-abc123f" --format "X.YY.Z-HASH"
 }
 
 test_format_vX_YY_Z_HASH_matches() {
-    daq_testing_assert_exit_code 0 "v3.14.2-abc123f" validate --format "vX.YY.Z-HASH"
+    daq_testing_assert_exit_code 0 validate "v3.14.2-abc123f" --format "vX.YY.Z-HASH"
 }
 
 test_format_mismatch_release_vs_rc() {
-    daq_testing_assert_exit_code 1 "3.14.2-rc" validate --format "X.YY.Z"
+    daq_testing_assert_exit_code 1 validate "3.14.2-rc" --format "X.YY.Z"
 }
 
 test_format_mismatch_with_v_vs_without() {
-    daq_testing_assert_exit_code 1 "v3.14.2" validate --format "X.YY.Z"
+    daq_testing_assert_exit_code 1 validate "v3.14.2" --format "X.YY.Z"
 }
 
 test_format_mismatch_without_v_vs_with() {
-    daq_testing_assert_exit_code 1 "3.14.2" validate --format "vX.YY.Z"
+    daq_testing_assert_exit_code 1 validate "3.14.2" --format "vX.YY.Z"
 }
 
 ################################################################################
@@ -287,27 +293,27 @@ test_format_mismatch_without_v_vs_with() {
 ################################################################################
 
 test_type_release_matches() {
-    daq_testing_assert_exit_code 0 "v3.14.2" validate --type release
+    daq_testing_assert_exit_code 0 validate "v3.14.2" --type release
 }
 
 test_type_rc_matches() {
-    daq_testing_assert_exit_code 0 "v3.14.2-rc" validate --type rc
+    daq_testing_assert_exit_code 0 validate "v3.14.2-rc" --type rc
 }
 
 test_type_dev_matches() {
-    daq_testing_assert_exit_code 0 "v3.14.2-abc123f" validate --type dev
+    daq_testing_assert_exit_code 0 validate "v3.14.2-abc123f" --type dev
 }
 
 test_type_rc_dev_matches() {
-    daq_testing_assert_exit_code 0 "v3.14.2-rc-abc123f" validate --type rc-dev
+    daq_testing_assert_exit_code 0 validate "v3.14.2-rc-abc123f" --type rc-dev
 }
 
 test_type_mismatch_release_vs_rc() {
-    daq_testing_assert_exit_code 1 "v3.14.2" validate --type rc
+    daq_testing_assert_exit_code 1 validate "v3.14.2" --type rc
 }
 
 test_type_mismatch_rc_vs_dev() {
-    daq_testing_assert_exit_code 1 "v3.14.2-rc" validate --type dev
+    daq_testing_assert_exit_code 1 validate "v3.14.2-rc" --type dev
 }
 
 ################################################################################
@@ -315,31 +321,31 @@ test_type_mismatch_rc_vs_dev() {
 ################################################################################
 
 test_parse_all_has_major() {
-    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_MAJOR=3" "v3.14.2-rc-abc123f" parse
+    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_MAJOR=3" parse "v3.14.2-rc-abc123f"
 }
 
 test_parse_all_has_minor() {
-    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_MINOR=14" "v3.14.2-rc-abc123f" parse
+    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_MINOR=14" parse "v3.14.2-rc-abc123f"
 }
 
 test_parse_all_has_patch() {
-    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_PATCH=2" "v3.14.2-rc-abc123f" parse
+    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_PATCH=2" parse "v3.14.2-rc-abc123f"
 }
 
 test_parse_all_has_prefix() {
-    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_PREFIX=v" "v3.14.2-rc-abc123f" parse
+    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_PREFIX=v" parse "v3.14.2-rc-abc123f"
 }
 
 test_parse_all_has_suffix() {
-    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_SUFFIX=rc" "v3.14.2-rc-abc123f" parse
+    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_SUFFIX=rc" parse "v3.14.2-rc-abc123f"
 }
 
 test_parse_all_has_hash() {
-    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_HASH=abc123f" "v3.14.2-rc-abc123f" parse
+    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_HASH=abc123f" parse "v3.14.2-rc-abc123f"
 }
 
 test_parse_all_has_type() {
-    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_TYPE=rc-dev" "v3.14.2-rc-abc123f" parse
+    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_TYPE=rc-dev" parse "v3.14.2-rc-abc123f"
 }
 
 ################################################################################
@@ -347,27 +353,27 @@ test_parse_all_has_type() {
 ################################################################################
 
 test_parse_single_major() {
-    daq_testing_assert_equals 0 "v3.14.2" parse --major
+    daq_testing_assert_equals 0 parse "v3.14.2" --major
 }
 
 test_parse_single_minor() {
-    daq_testing_assert_equals 0 "v3.14.2" parse --minor
+    daq_testing_assert_equals 0 parse "v3.14.2" --minor
 }
 
 test_parse_single_patch() {
-    daq_testing_assert_equals 0 "v3.14.2" parse --patch
+    daq_testing_assert_equals 0 parse "v3.14.2" --patch
 }
 
 test_parse_single_type() {
-    daq_testing_assert_equals 0 "v3.14.2-rc" parse --type
+    daq_testing_assert_equals 0 parse "v3.14.2-rc" --type
 }
 
 test_parse_single_prefix() {
-    daq_testing_assert_equals 0 "v3.14.2" parse --prefix
+    daq_testing_assert_equals 0 parse "v3.14.2" --prefix
 }
 
 test_parse_single_hash() {
-    daq_testing_assert_equals 0 "v3.14.2-abc123f" parse --hash
+    daq_testing_assert_equals 0 parse "v3.14.2-abc123f" --hash
 }
 
 ################################################################################
@@ -375,15 +381,15 @@ test_parse_single_hash() {
 ################################################################################
 
 test_parse_multiple_has_major() {
-    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_MAJOR=3" "v3.14.2" parse --major --minor --type
+    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_MAJOR=3" parse "v3.14.2" --major --minor --type
 }
 
 test_parse_multiple_has_minor() {
-    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_MINOR=14" "v3.14.2" parse --major --minor --type
+    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_MINOR=14" parse "v3.14.2" --major --minor --type
 }
 
 test_parse_multiple_has_type() {
-    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_TYPE=release" "v3.14.2" parse --major --minor --type
+    daq_testing_assert_contains 0 "OPENDAQ_VERSION_PARSED_TYPE=release" parse "v3.14.2" --major --minor --type
 }
 
 ################################################################################
@@ -391,15 +397,15 @@ test_parse_multiple_has_type() {
 ################################################################################
 
 test_parse_empty_prefix() {
-    daq_testing_assert_equals 0 "3.14.2" parse --prefix
+    daq_testing_assert_equals 0 parse "3.14.2" --prefix
 }
 
 test_parse_empty_suffix() {
-    daq_testing_assert_equals 0 "3.14.2" parse --suffix
+    daq_testing_assert_equals 0 parse "3.14.2" --suffix
 }
 
 test_parse_empty_hash() {
-    daq_testing_assert_equals 0 "3.14.2" parse --hash
+    daq_testing_assert_equals 0 parse "3.14.2" --hash
 }
 
 ################################################################################
@@ -459,75 +465,75 @@ test_compose_custom_suffix_alpha() {
 ################################################################################
 
 test_extract_simple() {
-    daq_testing_assert_equals 0 "Release v3.14.2 is available" extract
+    daq_testing_assert_equals 0 extract "Release v3.14.2 is available"
 }
 
 test_extract_rc() {
-    daq_testing_assert_equals 0 "Testing v3.14.2-rc build" extract
+    daq_testing_assert_equals 0 extract "Testing v3.14.2-rc build"
 }
 
 test_extract_dev() {
-    daq_testing_assert_equals 0 "Build v3.14.2-abc123f completed" extract
+    daq_testing_assert_equals 0 extract "Build v3.14.2-abc123f completed"
 }
 
 test_extract_rc_dev() {
-    daq_testing_assert_equals 0 "CI: v3.14.2-rc-abc123f passed" extract
+    daq_testing_assert_equals 0 extract "CI: v3.14.2-rc-abc123f passed"
 }
 
 test_extract_without_prefix() {
-    daq_testing_assert_equals 0 "Version 3.14.2 deployed" extract
+    daq_testing_assert_equals 0 extract "Version 3.14.2 deployed"
 }
 
 test_extract_from_filename() {
-    daq_testing_assert_equals 0 "opendaq-v3.14.2-rc.tar.gz" extract
+    daq_testing_assert_equals 0 extract "opendaq-v3.14.2-rc.tar.gz"
 }
 
 test_extract_first_version() {
-    daq_testing_assert_equals 0 "Version 3.14.2 and 3.15.0 available" extract
+    daq_testing_assert_equals 0 extract "Version 3.14.2 and 3.15.0 available"
 }
 
 test_extract_with_other_numbers() {
-    daq_testing_assert_equals 0 "Port 8080 version 3.14.2 on 192.168.1.1" extract
+    daq_testing_assert_equals 0 extract "Port 8080 version 3.14.2 on 192.168.1.1"
 }
 
 test_extract_no_version_found() {
-    daq_testing_assert_exit_code 1 "No version here" extract
+    daq_testing_assert_exit_code 1 extract "No version here"
 }
 
 ################################################################################
 # TESTS: Edge Cases
 ################################################################################
 
-test_edge_large_version_numbers() {
-    daq_testing_assert_equals 0 "999.999.999"
+test_edge_large_version_numbers_missing_argument() {
+    daq_testing_assert_equals 2 "999.999.999"
 }
 
-test_edge_single_digit_versions() {
-    daq_testing_assert_equals 0 "1.2.3"
+test_edge_single_digit_versions_missing_argument() {
+    daq_testing_assert_equals 2 "1.2.3"
 }
 
-test_edge_zero_version() {
-    daq_testing_assert_equals 0 "0.0.0"
+test_edge_zero_version_missing_argument() {
+    daq_testing_assert_equals 2 "0.0.0"
 }
 
 test_edge_parse_large_major() {
-    daq_testing_assert_equals 0 "999.14.2" parse --major
+    daq_testing_assert_equals 0 parse "999.14.2" --major
 }
 
 test_edge_long_hash() {
-    daq_testing_assert_equals 0 "3.14.2-abcdef123456789" parse --hash
+    daq_testing_assert_equals 0 parse "3.14.2-abcdef123456789" --hash
 }
 
 test_edge_short_hash() {
-    daq_testing_assert_equals 0 "3.14.2-abc" parse --hash
+    daq_testing_assert_equals 0 parse "3.14.2-abc" --hash
 }
 
 test_edge_suffix_with_numbers() {
-    daq_testing_assert_equals 0 "v3.14.2-beta-1" parse --suffix
+    daq_testing_assert_equals 0 parse "v3.14.2-beta-1" --suffix
 }
 
 test_edge_suffix_with_hyphens() {
-    daq_testing_assert_equals 0 "v3.14.2-pre-release" parse --suffix
+    daq_testing_assert_equals 0 parse "v3.14.2-pre-release" --suffix
 }
 
 ################################################################################
@@ -535,23 +541,23 @@ test_edge_suffix_with_hyphens() {
 ################################################################################
 
 test_error_compose_missing_major() {
-    daq_testing_assert_exit_code 1 "" compose --minor 14 --patch 2
+    daq_testing_assert_no_input 1 compose --minor 14 --patch 2
 }
 
 test_error_compose_missing_minor() {
-    daq_testing_assert_exit_code 1 "" compose --major 3 --patch 2
+    daq_testing_assert_no_input 1 compose --major 3 --patch 2
 }
 
 test_error_compose_missing_patch() {
-    daq_testing_assert_exit_code 1 "" compose --major 3 --minor 14
+    daq_testing_assert_no_input 1 compose --major 3 --minor 14
 }
 
 test_error_parse_invalid_version() {
-    daq_testing_assert_exit_code 1 "not-a-version" parse
+    daq_testing_assert_exit_code 1 parse "not-a-version"
 }
 
 test_error_validate_malformed() {
-    daq_testing_assert_exit_code 1 "v3.14.2.1" validate
+    daq_testing_assert_exit_code 1 validate "v3.14.2.1"
 }
 
 ################################################################################

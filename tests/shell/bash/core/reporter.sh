@@ -1,7 +1,7 @@
 #!/bin/bash
 ################################################################################
 # Module: reporter (testing framework core)
-# Version: 1.0.0
+# Version: 1.0.1
 # Description: Test result reporting and output formatting for openDAQ test framework
 #
 # Usage:
@@ -13,13 +13,19 @@
 # Exit codes: N/A (library only)
 ################################################################################
 
-set -euo pipefail
+# set -euo pipefail
+
+# # Zsh compatibility
+# if [ -n "$ZSH_VERSION" ]; then
+#     setopt SH_WORD_SPLIT
+#     setopt KSH_ARRAYS
+# fi
 
 ################################################################################
 # SCRIPT METADATA
 ################################################################################
 
-readonly DAQ_TESTING_REPORTER_VERSION="1.0.0"
+readonly DAQ_TESTING_REPORTER_VERSION="1.0.1"
 readonly DAQ_TESTING_REPORTER_BUILD_DATE="2025-01-15"
 
 ################################################################################

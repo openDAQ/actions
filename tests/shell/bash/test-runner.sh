@@ -1,7 +1,7 @@
 #!/bin/bash
 ################################################################################
 # Module: test-runner (testing framework)
-# Version: 1.0.0
+# Version: 1.0.1
 # Description: Test runner for openDAQ shell scripts with hierarchical filtering
 #
 # Usage:
@@ -14,13 +14,25 @@
 #   2 - Configuration or setup error
 ################################################################################
 
-set -euo pipefail
+# set -euo pipefail
+
+# # Ensure we're in bash or zsh
+# if [ -z "$BASH_VERSION" ] && [ -z "$ZSH_VERSION" ]; then
+#     echo "ERROR: This script requires bash or zsh" >&2
+#     exit 2
+# fi
+
+# # Zsh compatibility
+# if [ -n $ZSH_VERSION ]; then
+#     setopt SH_WORD_SPLIT
+#     setopt KSH_ARRAYS  # Arrays start at 0 like bash
+# fi
 
 ################################################################################
 # SCRIPT METADATA
 ################################################################################
 
-readonly DAQ_TESTING_RUNNER_VERSION="1.0.0"
+readonly DAQ_TESTING_RUNNER_VERSION="1.0.1"
 readonly DAQ_TESTING_RUNNER_BUILD_DATE="2025-01-15"
 readonly DAQ_TESTING_RUNNER_NAME="openDAQ Test Runner"
 
@@ -28,8 +40,8 @@ readonly DAQ_TESTING_RUNNER_NAME="openDAQ Test Runner"
 # CONFIGURATION - Paths
 ################################################################################
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TEST_RUNNER_DIR="$(pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+TEST_RUNNER_DIR="$SCRIPT_DIR"
 CORE_DIR="$TEST_RUNNER_DIR/core"
 SUITES_DIR="$TEST_RUNNER_DIR/suites"
 
@@ -127,9 +139,9 @@ DESCRIPTION:
 USAGE:
   test-runner.sh [OPTIONS] [SUITE[:TESTS]...]
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════════════════════════════════════════════
 OPTIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════════════════════════════════════════════
 
   -h, --help              Show this help message
   -l, --list              List available test suites
@@ -142,26 +154,26 @@ OPTIONS
   --exclude-test TEST     Exclude specific test(s) from all suites - comma separated
   --list-tests [SUITE]    List all tests in suite(s) or all if none specified
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════════════════════════════════════════════
 FILTERING HIERARCHY (by priority)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════════════════════════════════════════════
 
   1. Positive specification: suite:test1,test2 (highest priority)
   2. Exclusions: --exclude-suite, --exclude-test
   3. Regex filter: --filter "pattern" (lowest priority)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════════════════════════════════════════════
 ARGUMENTS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════════════════════════════════════════════
 
   SUITE[:TESTS]           Test suite with optional specific tests
                           SUITE - run all tests in suite
                           SUITE:test1,test2 - run only specified tests in suite
                           If no suites specified, runs all available suites
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════════════════════════════════════════════
 EXAMPLES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════════════════════════════════════════════
 
   # Basic usage
   test-runner.sh
@@ -215,9 +227,9 @@ EXAMPLES
   test-runner.sh version-format --verbose --debug
       Run with verbose and debug output
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════════════════════════════════════════════
 DIRECTORY STRUCTURE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+═══════════════════════════════════════════════════════════════════════════════
 
   tests/
   ├── test-runner.sh              # This script
@@ -265,9 +277,9 @@ __daq_testing_runner_extract_test_names() {
         return 1
     fi
     
-    # Extract test names from daq_testing_assert_* function calls
-    grep -E '^\s*daq_testing_assert_[^"]*"[^"]*"' "$suite_file" | \
-        sed -E 's/.*daq_testing_assert_[^"]*"([^"]*)".*$/\1/' | \
+    # Extract test function names
+    grep -E '^\s*test_[a-zA-Z0-9_]+\(\)' "$suite_file" | \
+        sed -E 's/^\s*test_([a-zA-Z0-9_]+)\(\).*/test_\1/' | \
         sort | uniq
 }
 
@@ -325,9 +337,16 @@ __daq_testing_runner_find_script_path() {
     local scripts_dir="$2"
     
     # Try different possible script names and locations
+    # Adjusted for structure: tests/shell/bash/ -> scripts/shell/bash/core/
     local possible_paths=(
         "$scripts_dir/${suite_name}.sh"
         "$scripts_dir/$suite_name"
+        "$scripts_dir/core/${suite_name}.sh"
+        "$scripts_dir/core/$suite_name"
+        "$SCRIPT_DIR/../../../scripts/shell/bash/core/${suite_name}.sh"
+        "$SCRIPT_DIR/../../../scripts/shell/bash/core/$suite_name"
+        "$SCRIPT_DIR/../../../scripts/shell/bash/${suite_name}.sh"
+        "$SCRIPT_DIR/../../../scripts/shell/bash/$suite_name"
         "$SCRIPT_DIR/../../${suite_name}/${suite_name}.sh"
         "$SCRIPT_DIR/../../${suite_name}/${suite_name}"
         "$SCRIPT_DIR/../${suite_name}/${suite_name}.sh"
@@ -348,6 +367,30 @@ __daq_testing_runner_find_script_path() {
     done
     
     return 1
+}
+
+################################################################################
+# PRIVATE FUNCTIONS - Test Discovery and Execution
+################################################################################
+
+# Discover test functions from sourced suite
+# Returns: Array of test function names
+__daq_testing_runner_discover_tests() {
+    local test_functions=()
+    
+    # Find all functions starting with "test_"
+    if [ -n "$BASH_VERSION" ]; then
+        # Bash
+        while IFS= read -r func; do
+            test_functions+=("$func")
+        done < <(declare -F | grep "declare -f test_" | awk '{print $3}')
+    elif [ -n "$ZSH_VERSION" ]; then
+        # Zsh
+        test_functions=(${(k)functions[(I)test_*]})
+    fi
+    
+    # Return as space-separated string
+    echo "${test_functions[@]}"
 }
 
 ################################################################################
@@ -401,7 +444,7 @@ __daq_testing_runner_execute_suite() {
     if [ $? -ne 0 ]; then
         daq_testing_reporter_error "Script not found for suite '$suite_name'"
         daq_testing_reporter_info "Searched for component: $component_name"
-        daq_testing_reporter_info "Searched in: $scripts_dir, parent directory, current directory"
+        daq_testing_reporter_info "Searched in: $scripts_dir and relative paths"
         return 1
     fi
     
@@ -418,12 +461,71 @@ __daq_testing_runner_execute_suite() {
     fi
     
     # Update filter with positive tests from suite spec
-    daq_testing_filter_init "$positive_tests" "" "" ""
+    daq_testing_filter_init "$positive_tests" "$GLOBAL_EXCLUDED_TESTS" "$GLOBAL_EXCLUDED_SUITES" "$GLOBAL_REGEX_FILTER"
     
-    # Source and run the test suite
+    # Source the test suite
     if ! source "$suite_file"; then
-        daq_testing_reporter_error "Failed to run test suite: $suite_file"
+        daq_testing_reporter_error "Failed to source test suite: $suite_file"
         return 1
+    fi
+    
+    # Discover test functions
+    local test_functions
+    test_functions=$(__daq_testing_runner_discover_tests)
+    
+    if [ -z "$test_functions" ]; then
+        daq_testing_reporter_warning "No test functions found in suite: $suite_name"
+        return 0
+    fi
+    
+    # Run suite setup if exists
+    if declare -f test_suite_setup >/dev/null 2>&1; then
+        test_suite_setup
+    fi
+    
+    # Run each test function
+    for test_func in $test_functions; do
+        # Apply filtering
+        if ! daq_testing_filter_should_run "$test_func"; then
+            # daq_testing_reporter_skip "$test_func" "filtered"
+            continue
+        fi
+        
+        # Reset test state
+        daq_testing_common_reset_test_state
+        daq_testing_common_increment_total
+        
+        # Run test setup if exists
+        if declare -f test_setup >/dev/null 2>&1; then
+            test_setup
+        fi
+        
+        # Report test start
+        daq_testing_reporter_test_start "$test_func"
+        
+        # Run the test function
+        if $test_func; then
+            if ! daq_testing_common_is_test_failed; then
+                daq_testing_common_increment_passed
+                daq_testing_reporter_test_end "$test_func" "PASS"
+            else
+                daq_testing_common_increment_failed
+                daq_testing_reporter_test_end "$test_func" "FAIL"
+            fi
+        else
+            daq_testing_common_increment_failed
+            daq_testing_reporter_test_end "$test_func" "FAIL"
+        fi
+        
+        # Run test teardown if exists
+        if declare -f test_teardown >/dev/null 2>&1; then
+            test_teardown
+        fi
+    done
+    
+    # Run suite teardown if exists
+    if declare -f test_suite_teardown >/dev/null 2>&1; then
+        test_suite_teardown
     fi
     
     # Get results from this suite
@@ -458,7 +560,8 @@ __daq_testing_runner_execute_suite() {
 # Args: $@... - command line arguments
 # Returns: 0 if all tests passed, 1 if any failed, 2 if configuration error
 daq_testing_runner_main() {
-    local scripts_dir="$SCRIPT_DIR/.."
+    # Default scripts directory adjusted for project structure
+    local scripts_dir="$SCRIPT_DIR/../../../scripts/shell/bash"
     local list_tests_suites=()
     local suites_to_run=()
     
@@ -526,6 +629,9 @@ daq_testing_runner_main() {
                     # No suite specified, list all
                     shift
                 fi
+                # Execute list-tests immediately
+                __daq_testing_runner_list_tests "${list_tests_suites[@]}"
+                exit 0
                 ;;
             -*)
                 echo "Unknown option: $1" >&2
@@ -538,12 +644,6 @@ daq_testing_runner_main() {
                 ;;
         esac
     done
-    
-    # Handle --list-tests
-    if [ ${#list_tests_suites[@]} -gt 0 ] || [[ " $* " == *" --list-tests "* ]]; then
-        __daq_testing_runner_list_tests "${list_tests_suites[@]}"
-        exit $?
-    fi
     
     # If no suites specified, find all available suites
     if [ ${#suites_to_run[@]} -eq 0 ]; then
@@ -650,12 +750,34 @@ daq_testing_runner_main() {
 ################################################################################
 
 # Only execute if script is run directly (not sourced)
-if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-    # Show short help if no arguments
-    if [ $# -eq 0 ]; then
-        __daq_testing_runner_help_short
-        exit 0
-    fi
+if [ "${BASH_SOURCE[0]:-$0}" = "${0}" ]; then
+    # Parse global flags first
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --help|-h)
+                __daq_testing_runner_help
+                exit 0
+                ;;
+            --version|-v)
+                echo "test-runner v$DAQ_TESTING_RUNNER_VERSION (build: $DAQ_TESTING_RUNNER_BUILD_DATE)"
+                exit 0
+                ;;
+            --verbose)
+                __DAQ_TESTING_RUNNER_VERBOSE=true
+                export OPENDAQ_VERBOSE=true
+                shift
+                ;;
+            --debug|-d)
+                __DAQ_TESTING_RUNNER_DEBUG=true
+                export OPENDAQ_DEBUG=true
+                shift
+                ;;
+            *)
+                # Not a global flag, break to process commands
+                break
+                ;;
+        esac
+    done
     
     # Run main function
     daq_testing_runner_main "$@"
