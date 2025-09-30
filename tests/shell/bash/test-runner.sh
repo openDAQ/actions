@@ -14,20 +14,6 @@
 #   2 - Configuration or setup error
 ################################################################################
 
-# set -euo pipefail
-
-# # Ensure we're in bash or zsh
-# if [ -z "$BASH_VERSION" ] && [ -z "$ZSH_VERSION" ]; then
-#     echo "ERROR: This script requires bash or zsh" >&2
-#     exit 2
-# fi
-
-# # Zsh compatibility
-# if [ -n $ZSH_VERSION ]; then
-#     setopt SH_WORD_SPLIT
-#     setopt KSH_ARRAYS  # Arrays start at 0 like bash
-# fi
-
 ################################################################################
 # SCRIPT METADATA
 ################################################################################
@@ -55,6 +41,7 @@ FAILED_SUITES=0
 GRAND_TOTAL_TESTS=0
 GRAND_PASSED_TESTS=0
 GRAND_FAILED_TESTS=0
+GRAND_SKIPPED_TESTS=0
 
 ################################################################################
 # GLOBAL STATE - Runner Configuration
@@ -487,7 +474,13 @@ __daq_testing_runner_execute_suite() {
     for test_func in $test_functions; do
         # Apply filtering
         if ! daq_testing_filter_should_run "$test_func"; then
-            # daq_testing_reporter_skip "$test_func" "filtered"
+            daq_testing_common_increment_skipped
+
+            # Show skip only in verbose/debug mode
+            if [ "$__DAQ_TESTING_RUNNER_VERBOSE" = "true" ] || [ "$__DAQ_TESTING_RUNNER_DEBUG" = "true" ]; then
+                daq_testing_reporter_test_start "$test_func"
+                daq_testing_reporter_skip "$test_func" "filtered"
+            fi
             continue
         fi
         
@@ -499,10 +492,10 @@ __daq_testing_runner_execute_suite() {
         if declare -f test_setup >/dev/null 2>&1; then
             test_setup
         fi
-        
+
         # Report test start
         daq_testing_reporter_test_start "$test_func"
-        
+
         # Run the test function
         if $test_func; then
             if ! daq_testing_common_is_test_failed; then
@@ -534,11 +527,13 @@ __daq_testing_runner_execute_suite() {
     local suite_total=$(echo "$results" | cut -d' ' -f1)
     local suite_passed=$(echo "$results" | cut -d' ' -f2)
     local suite_failed=$(echo "$results" | cut -d' ' -f3)
+    local suite_skipped=$(echo "$results" | cut -d' ' -f4)
     
     # Update grand totals
     GRAND_TOTAL_TESTS=$((GRAND_TOTAL_TESTS + suite_total))
     GRAND_PASSED_TESTS=$((GRAND_PASSED_TESTS + suite_passed))
     GRAND_FAILED_TESTS=$((GRAND_FAILED_TESTS + suite_failed))
+    GRAND_SKIPPED_TESTS=$((GRAND_SKIPPED_TESTS + suite_skipped)) 
     
     # Print suite summary
     if daq_testing_reporter_suite_summary; then
@@ -738,7 +733,8 @@ daq_testing_runner_main() {
         "$FAILED_SUITES" \
         "$GRAND_TOTAL_TESTS" \
         "$GRAND_PASSED_TESTS" \
-        "$GRAND_FAILED_TESTS"; then
+        "$GRAND_FAILED_TESTS" \
+        "$GRAND_SKIPPED_TESTS"; then
         exit 0
     else
         exit 1

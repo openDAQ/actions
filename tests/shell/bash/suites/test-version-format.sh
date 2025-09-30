@@ -69,7 +69,7 @@ test_version_output() {
 }
 
 test_help_short() {
-    daq_testing_assert_no_args_contains 0 "USAGE:"
+    daq_testing_assert_no_input_contains 0 "USAGE:"
 }
 
 test_help_full() {

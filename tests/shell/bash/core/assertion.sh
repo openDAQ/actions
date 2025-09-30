@@ -171,19 +171,26 @@ daq_testing_assert_no_input() {
     local expected_exit_code="$1"
     shift
     
-    # Get script path
+    # Filter out empty arguments
+    local filtered_args=()
+    for arg in "$@"; do
+        if [ -n "$arg" ]; then
+            filtered_args+=("$arg")
+        fi
+    done
+    
     local script_path
     script_path=$(daq_testing_common_get_script_path)
     
-    # Execute command without input argument
-    __daq_testing_assert_execute "$script_path" "$@"
+    # Execute command
+    __daq_testing_assert_execute "$script_path" "${filtered_args[@]}"
     
     # Check exit code
     if [ $__ASSERT_EXIT_CODE -ne $expected_exit_code ]; then
         __daq_testing_assert_record_fail \
             "Expected exit code: $expected_exit_code" \
             "Actual exit code: $__ASSERT_EXIT_CODE" \
-            "Command: $script_path $*"
+            "Command: $script_path ${filtered_args[*]}"
         return 1
     fi
     
@@ -200,6 +207,14 @@ daq_testing_assert_no_input_contains() {
     local expected_exit_code="$1"
     local expected_substring="$2"
     shift 2
+
+    # Filter out empty arguments
+    local filtered_args=()
+    for arg in "$@"; do
+        if [ -n "$arg" ]; then
+            filtered_args+=("$arg")
+        fi
+    done
     
     # Get script path
     local script_path
@@ -217,36 +232,6 @@ daq_testing_assert_no_input_contains() {
     fi
     
     # Check if output contains expected substring
-    if ! echo "$__ASSERT_OUTPUT" | grep -q "$expected_substring"; then
-        __daq_testing_assert_record_fail \
-            "Expected output to contain: '$expected_substring'" \
-            "Actual output: '$__ASSERT_OUTPUT'"
-        return 1
-    fi
-    
-    __daq_testing_assert_record_pass "Output contains: '$expected_substring'"
-    return 0
-}
-
-# Assert command with truly no arguments (not even empty string)
-daq_testing_assert_no_args_contains() {
-    local expected_exit_code="$1"
-    local expected_substring="$2"
-    
-    local script_path
-    script_path=$(daq_testing_common_get_script_path)
-    
-    # Execute command with no arguments at all
-    __ASSERT_OUTPUT=$("$script_path" 2>&1)
-    __ASSERT_EXIT_CODE=$?
-    
-    if [ $__ASSERT_EXIT_CODE -ne $expected_exit_code ]; then
-        __daq_testing_assert_record_fail \
-            "Expected exit code: $expected_exit_code" \
-            "Actual exit code: $__ASSERT_EXIT_CODE"
-        return 1
-    fi
-    
     if ! echo "$__ASSERT_OUTPUT" | grep -q "$expected_substring"; then
         __daq_testing_assert_record_fail \
             "Expected output to contain: '$expected_substring'" \

@@ -38,7 +38,7 @@ readonly DAQ_TESTING_REPORTER_BUILD_DATE="2025-01-15"
 daq_testing_reporter_pass() {
     local test_name="$1"
     
-    echo "${DAQ_TESTING_COLOR_GREEN}✓ PASS${DAQ_TESTING_COLOR_RESET}: $test_name"
+    echo "${DAQ_TESTING_COLOR_GREEN}✓ PASS${DAQ_TESTING_COLOR_RESET}: ${suite_name}:${test_name}"
     
     return 0
 }
@@ -51,7 +51,7 @@ daq_testing_reporter_fail() {
     local test_name="$1"
     shift
     
-    echo "${DAQ_TESTING_COLOR_RED}✗ FAIL${DAQ_TESTING_COLOR_RESET}: $test_name"
+    echo "${DAQ_TESTING_COLOR_RED}✗ FAIL${DAQ_TESTING_COLOR_RESET}: ${suite_name}:${test_name}"
     
     # Print additional failure details if provided
     while [ $# -gt 0 ]; do
@@ -71,9 +71,9 @@ daq_testing_reporter_skip() {
     local reason="${2:-}"
     
     if [ -n "$reason" ]; then
-        echo "${DAQ_TESTING_COLOR_YELLOW}○ SKIP${DAQ_TESTING_COLOR_RESET}: $test_name (${reason})"
+        echo "${DAQ_TESTING_COLOR_YELLOW}○ SKIP${DAQ_TESTING_COLOR_RESET}: ${suite_name}:${test_name} (${reason})"
     else
-        echo "${DAQ_TESTING_COLOR_YELLOW}○ SKIP${DAQ_TESTING_COLOR_RESET}: $test_name"
+        echo "${DAQ_TESTING_COLOR_YELLOW}○ SKIP${DAQ_TESTING_COLOR_RESET}: ${suite_name}:${test_name}"
     fi
     
     return 0
@@ -124,6 +124,8 @@ daq_testing_reporter_suite_summary() {
     echo "Suite: $suite_name"
     echo "Total tests: $OPENDAQ_TEST_TOTAL"
     echo "${DAQ_TESTING_COLOR_GREEN}Passed: $OPENDAQ_TEST_PASSED${DAQ_TESTING_COLOR_RESET}"
+    echo "${DAQ_TESTING_COLOR_YELLOW}Skipped: $OPENDAQ_TEST_SKIPPED${DAQ_TESTING_COLOR_RESET}"
+
     
     if [ $OPENDAQ_TEST_FAILED -gt 0 ]; then
         echo "${DAQ_TESTING_COLOR_RED}Failed: $OPENDAQ_TEST_FAILED${DAQ_TESTING_COLOR_RESET}"
@@ -151,6 +153,7 @@ daq_testing_reporter_suite_summary() {
 #       $4 - grand total tests
 #       $5 - grand passed tests
 #       $6 - grand failed tests
+#       $7 - grand skipped tests
 # Returns: 0 if all passed, 1 if any failed
 daq_testing_reporter_grand_summary() {
     local total_suites="$1"
@@ -159,6 +162,7 @@ daq_testing_reporter_grand_summary() {
     local grand_total="$4"
     local grand_passed="$5"
     local grand_failed="$6"
+    local grand_skipped="$7"
     
     echo
     echo "${DAQ_TESTING_COLOR_BLUE}===========================================${DAQ_TESTING_COLOR_RESET}"
@@ -176,6 +180,7 @@ daq_testing_reporter_grand_summary() {
     echo
     echo "Grand total tests: $grand_total"
     echo "${DAQ_TESTING_COLOR_GREEN}Grand total passed: $grand_passed${DAQ_TESTING_COLOR_RESET}"
+    echo "${DAQ_TESTING_COLOR_YELLOW}Grand total skipped: $grand_skipped${DAQ_TESTING_COLOR_RESET}"
     
     if [ $grand_failed -gt 0 ]; then
         echo "${DAQ_TESTING_COLOR_RED}Grand total failed: $grand_failed${DAQ_TESTING_COLOR_RESET}"
@@ -207,7 +212,7 @@ daq_testing_reporter_test_start() {
     local test_name="$1"
     
     echo
-    echo "${DAQ_TESTING_COLOR_BLUE}--- Test: $test_name ---${DAQ_TESTING_COLOR_RESET}"
+    echo "${DAQ_TESTING_COLOR_BLUE}--- Test: ${suite_name}:${test_name} ---${DAQ_TESTING_COLOR_RESET}"
     
     return 0
 }
@@ -221,9 +226,9 @@ daq_testing_reporter_test_end() {
     local result="$2"
     
     if [ "$result" = "PASS" ]; then
-        echo "${DAQ_TESTING_COLOR_GREEN}✓ PASS${DAQ_TESTING_COLOR_RESET}: $test_name"
+        echo "${DAQ_TESTING_COLOR_GREEN}✓ PASS${DAQ_TESTING_COLOR_RESET}: ${suite_name}:${test_name}"
     else
-        echo "${DAQ_TESTING_COLOR_RED}✗ FAIL${DAQ_TESTING_COLOR_RESET}: $test_name"
+        echo "${DAQ_TESTING_COLOR_RED}✗ FAIL${DAQ_TESTING_COLOR_RESET}: ${suite_name}:${test_name}"
     fi
     
     return 0

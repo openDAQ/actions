@@ -35,6 +35,7 @@ readonly DAQ_TESTING_COMMON_BUILD_DATE="2025-01-15"
 OPENDAQ_TEST_TOTAL=0
 OPENDAQ_TEST_PASSED=0
 OPENDAQ_TEST_FAILED=0
+OPENDAQ_TEST_SKIPPED=0
 
 ################################################################################
 # GLOBAL STATE - Current Context
@@ -171,6 +172,7 @@ daq_testing_common_reset() {
     OPENDAQ_TEST_TOTAL=0
     OPENDAQ_TEST_PASSED=0
     OPENDAQ_TEST_FAILED=0
+    OPENDAQ_TEST_SKIPPED=0
     
     if [ "$__DAQ_TESTING_DEBUG" = "true" ]; then
         echo "[DEBUG] common: Counters reset" >&2
@@ -182,7 +184,7 @@ daq_testing_common_reset() {
 # Get current test results
 # Returns: Space-separated string "total passed failed"
 daq_testing_common_get_results() {
-    echo "$OPENDAQ_TEST_TOTAL $OPENDAQ_TEST_PASSED $OPENDAQ_TEST_FAILED"
+    echo "$OPENDAQ_TEST_TOTAL $OPENDAQ_TEST_PASSED $OPENDAQ_TEST_FAILED $OPENDAQ_TEST_SKIPPED"
 }
 
 # Get current suite name
@@ -244,6 +246,18 @@ daq_testing_common_increment_failed() {
     
     if [ "$__DAQ_TESTING_DEBUG" = "true" ]; then
         echo "[DEBUG] common: Failed tests: $OPENDAQ_TEST_FAILED" >&2
+    fi
+    
+    return 0
+}
+
+# Increment skipped test counter
+# Returns: 0 always
+daq_testing_common_increment_skipped() {
+    OPENDAQ_TEST_SKIPPED=$((OPENDAQ_TEST_SKIPPED + 1))
+    
+    if [ "$__DAQ_TESTING_DEBUG" = "true" ]; then
+        echo "[DEBUG] common: Skipped tests: $OPENDAQ_TEST_SKIPPED" >&2
     fi
     
     return 0
