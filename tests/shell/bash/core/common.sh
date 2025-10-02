@@ -12,14 +12,6 @@
 # Exit codes: N/A (library only)
 ################################################################################
 
-# set -euo pipefail
-
-# # Zsh compatibility
-# if [ -n "$ZSH_VERSION" ]; then
-#     setopt SH_WORD_SPLIT
-#     setopt KSH_ARRAYS
-# fi
-
 ################################################################################
 # SCRIPT METADATA
 ################################################################################
@@ -42,8 +34,8 @@ OPENDAQ_TEST_SKIPPED=0
 ################################################################################
 # Private variables for internal framework use
 
+__DAQ_TESTING_SCRIPTS_DIR=""
 __DAQ_TESTING_CURRENT_SUITE=""
-__DAQ_TESTING_SCRIPT_PATH=""
 __DAQ_TESTING_VERBOSE=false
 __DAQ_TESTING_DEBUG=false
 __DAQ_TESTING_CURRENT_TEST_FAILED=false  # Tracks if current test has failed
@@ -96,31 +88,30 @@ __daq_testing_common_setup_colors() {
 ################################################################################
 
 # Initialize test framework common state
-# Args: $1 - script path (path to script being tested)
-#       $2 - suite name (name of test suite)
+# Args: $1 - suite name (name of test suite)
+#       $2 - scripts dir (path to scripts root directory)
 #       $3 - verbose flag (optional, "true" or "false", default: false)
 #       $4 - debug flag (optional, "true" or "false", default: false)
 # Sets: Global state variables
 # Returns: 0 on success, 1 on error
 daq_testing_common_init() {
-    local script_path="$1"
-    local suite_name="$2"
+    local suite_name="$1"
+    local scripts_dir="$2"
     local verbose="${3:-false}"
     local debug="${4:-false}"
     
     # Validate required arguments
-    if [ -z "$script_path" ]; then
-        echo "ERROR: Script path is required" >&2
-        return 1
-    fi
-    
     if [ -z "$suite_name" ]; then
         echo "ERROR: Suite name is required" >&2
         return 1
     fi
     
+    if [ -z "$scripts_dir" ]; then
+        echo "ERROR: Scripts directory is required" >&2
+        return 1
+    fi
+    
     # Set context
-    __DAQ_TESTING_SCRIPT_PATH="$script_path"
     __DAQ_TESTING_CURRENT_SUITE="$suite_name"
     __DAQ_TESTING_VERBOSE="$verbose"
     __DAQ_TESTING_DEBUG="$debug"
@@ -182,7 +173,7 @@ daq_testing_common_reset() {
 }
 
 # Get current test results
-# Returns: Space-separated string "total passed failed"
+# Returns: Space-separated string "total passed failed skipped"
 daq_testing_common_get_results() {
     echo "$OPENDAQ_TEST_TOTAL $OPENDAQ_TEST_PASSED $OPENDAQ_TEST_FAILED $OPENDAQ_TEST_SKIPPED"
 }
@@ -193,10 +184,10 @@ daq_testing_common_get_suite() {
     echo "$__DAQ_TESTING_CURRENT_SUITE"
 }
 
-# Get script path being tested
-# Returns: Script path
-daq_testing_common_get_script_path() {
-    echo "$__DAQ_TESTING_SCRIPT_PATH"
+# Get root dir of scripts being tested
+# Returns: Scripts root dir
+daq_testing_common_get_scripts_dir() {
+    echo "$__DAQ_TESTING_SCRIPTS_DIR"
 }
 
 # Check if verbose mode is enabled

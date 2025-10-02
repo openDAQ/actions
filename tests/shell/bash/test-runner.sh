@@ -26,6 +26,8 @@ readonly DAQ_TESTING_RUNNER_NAME="openDAQ Test Runner"
 # CONFIGURATION - Paths
 ################################################################################
 
+OPENDAQ_ACTIONS_SCRIPTS_DIR=""
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 TEST_RUNNER_DIR="$SCRIPT_DIR"
 CORE_DIR="$TEST_RUNNER_DIR/core"
@@ -70,6 +72,7 @@ source "$CORE_DIR/common.sh"
 source "$CORE_DIR/reporter.sh"
 source "$CORE_DIR/filter.sh"
 source "$CORE_DIR/assertion.sh"
+source "$CORE_DIR/execution.sh"
 
 ################################################################################
 # HELP SYSTEM - Short Help
@@ -668,7 +671,10 @@ daq_testing_runner_main() {
         echo "Use --list to see available suites" >&2
         exit 2
     fi
-    
+
+    daq_testing_execute_init "$scripts_dir" $OPENDAQ_VERBOSE
+    daq_testing_assertion_init $OPENDAQ_VERBOSE
+
     # Print runner banner
     daq_testing_reporter_runner_banner "$DAQ_TESTING_RUNNER_NAME" "$DAQ_TESTING_RUNNER_VERSION"
     echo "Scripts directory: $scripts_dir"
@@ -758,7 +764,7 @@ if [ "${BASH_SOURCE[0]:-$0}" = "${0}" ]; then
                 echo "test-runner v$DAQ_TESTING_RUNNER_VERSION (build: $DAQ_TESTING_RUNNER_BUILD_DATE)"
                 exit 0
                 ;;
-            --verbose)
+            --verbose|-V)
                 __DAQ_TESTING_RUNNER_VERBOSE=true
                 export OPENDAQ_VERBOSE=true
                 shift

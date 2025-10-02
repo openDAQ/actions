@@ -13,14 +13,6 @@
 # Exit codes: N/A (library only)
 ################################################################################
 
-# set -euo pipefail
-
-# # Zsh compatibility
-# if [ -n "$ZSH_VERSION" ]; then
-#     setopt SH_WORD_SPLIT
-#     setopt KSH_ARRAYS
-# fi
-
 ################################################################################
 # SCRIPT METADATA
 ################################################################################
@@ -29,8 +21,39 @@ readonly DAQ_TESTING_REPORTER_VERSION="1.0.1"
 readonly DAQ_TESTING_REPORTER_BUILD_DATE="2025-01-15"
 
 ################################################################################
+# GLOBAL STATE - Current Context
+################################################################################
+# Private variables for internal framework use
+
+__DAQ_TESTING_REPORTER_SCRIPTS_DIR=""
+__DAQ_TESTING_REPORTER_COMMAND_NAME=""
+__DAQ_TESTING_REPORTER_COMMAND_OUTPUT=""
+__DAQ_TESTING_REPORTER_COMMAND_EXIT_CODE=""
+__DAQ_TESTING_REPORTER_COMMAND_REPORT=""
+
+################################################################################
 # PUBLIC API - Test Result Reporting
 ################################################################################
+
+daq_testing_reporter_init() {
+    local scripts_dir="$1"
+    __DAQ_TESTING_REPORTER_SCRIPTS_DIR="$scripts_dir"
+
+    # Verify scripts dir exists
+    if [ ! -f "$scripts_dir" ]; then
+        echo "${__DAQ_TESTING_COLOR_RED}ERROR: Script not found at $script_path${__DAQ_TESTING_COLOR_RESET}" >&2
+        echo "Please ensure the script exists or use correct path" >&2
+        return 1
+    fi
+
+    daq_testing_reporter_reset
+}
+
+daq_testing_reporter_reset() {
+    __DAQ_TESTING_REPORTER_COMMAND_NAME=""
+    __DAQ_TESTING_REPORTER_COMMAND_OUTPUT=""
+    __DAQ_TESTING_REPORTER_COMMAND_EXIT_CODE=""
+}
 
 # Report a passed test
 # Args: $1 - test name/description
@@ -256,6 +279,45 @@ daq_testing_reporter_assertion_fail_detail() {
         shift
     done
     
+    return 0
+}
+
+daq_testing_reporter_execute_command() {
+    local command="$1"
+    local scripts_dir=$(daq_testing_common_get_scripts_dir)
+    local full_path=""
+    local report=""
+
+    if [[ "$command" == /* ]]; then
+        full_path="$command"
+    else
+        full_path="$scripts_dir/$command"
+    fi
+
+    if [ ! -f "$full_path" ]; then
+        echo "${__DAQ_TESTING_COLOR_RED}ERROR: "Script not found: $full_path"${__DAQ_TESTING_COLOR_RESET}" >&2
+        return 1
+    fi
+
+    if [ ! -x "$full_path" ]; then
+        echo "${__DAQ_TESTING_COLOR_YELLOW}WARNING: Script is not executable: \"${full_path}\" ${__DAQ_TESTING_COLOR_RESET}" >&2
+        echo "${__DAQ_TESTING_COLOR_YELLOW}WARNING: Try to making it executable...${__DAQ_TESTING_COLOR_RESET}" >&2
+        chmod +x "$script_path" || {
+            echo "${__DAQ_TESTING_COLOR_RED}ERROR: Failed to make script executable${__DAQ_TESTING_COLOR_RESET}" >&2
+            return 1
+        }
+    fi
+
+    __DAQ_TESTING_REPORTER_COMMAND_NAME="$full_path $@"
+    __DAQ_TESTING_REPORTER_COMMAND_OUTPUT=$("$full_path" "$@" 2>&1)
+    __DAQ_TESTING_REPORTER_COMMAND_EXIT_CODE=$?
+
+    if daq_testing_common_is_debug; then
+        daq_testing_common_log_debug "Executed: $full_path $*"
+        daq_testing_common_log_debug "Exit code: $__ASSERT_EXIT_CODE"
+        daq_testing_common_log_debug "Output: ${__ASSERT_OUTPUT:0:100}..."
+    fi
+
     return 0
 }
 
