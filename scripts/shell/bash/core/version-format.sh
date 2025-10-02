@@ -20,22 +20,14 @@
 set -euo pipefail
 
 ################################################################################
-# DEPENDENCY LOADING
+# INTERNAL LOGGING FUNCTIONS
 ################################################################################
-
-# Determine script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Logging flags (can be overridden by environment or logger integration)
 __DAQ_VERSION_VERBOSE=${OPENDAQ_VERBOSE:-false}
 __DAQ_VERSION_DEBUG=${OPENDAQ_DEBUG:-false}
 
-################################################################################
-# INTERNAL LOGGING FUNCTIONS
-################################################################################
-
-# These are stubs that can be overridden by sourcing lib/logger.sh
-# By default, they output to stdout/stderr
+# Logging functions output to stdout/stderr
 
 __daq_version_log_verbose() {
     if [ "$__DAQ_VERSION_VERBOSE" = "true" ]; then
@@ -60,36 +52,6 @@ __daq_version_log_warning() {
 __daq_version_log_error() {
     echo "[ERROR] version-format: $*" >&2
 }
-
-# Optional: Try to integrate with logger.sh if available
-if [ -f "$SCRIPT_DIR/../lib/logger.sh" ]; then
-    source "$SCRIPT_DIR/../lib/logger.sh" 2>/dev/null || true
-    
-    # If logger is available, create wrapper functions
-    if command -v daq_logger_verbose >/dev/null 2>&1; then
-        daq_logger_set_context "version-format"
-        
-        __daq_version_log_verbose() {
-            daq_logger_verbose "$@"
-        }
-        
-        __daq_version_log_debug() {
-            daq_logger_debug "$@"
-        }
-        
-        __daq_version_log_info() {
-            daq_logger_info "$@"
-        }
-        
-        __daq_version_log_warning() {
-            daq_logger_warning "$@"
-        }
-        
-        __daq_version_log_error() {
-            daq_logger_error "$@"
-        }
-    fi
-fi
 
 ################################################################################
 # SCRIPT METADATA
@@ -140,8 +102,23 @@ readonly __DAQ_VERSION_VALID_NUMBER_REGEX="^[0-9]+$"
 # HELP SYSTEM - Short Help
 ################################################################################
 
+readonly __DAQ_VERSION_EXAMPLE_MAJOR=1
+readonly __DAQ_VERSION_EXAMPLE_MINOR=40
+readonly __DAQ_VERSION_EXAMPLE_PATCH=9
+readonly __DAQ_VERSION_EXAMPLE_HASH="a1b2c3f4"
+
+readonly __DAQ_VERSION_EXAMPLE_X_YY_Z="${__DAQ_VERSION_EXAMPLE_MAJOR}.${__DAQ_VERSION_EXAMPLE_MINOR}.${__DAQ_VERSION_EXAMPLE_PATCH}"
+readonly __DAQ_VERSION_EXAMPLE_X_YY_Z_RC="$__DAQ_VERSION_EXAMPLE_X_YY_Z-rc"
+readonly __DAQ_VERSION_EXAMPLE_X_YY_Z_HASH="$__DAQ_VERSION_EXAMPLE_X_YY_Z-$__DAQ_VERSION_EXAMPLE_HASH"
+readonly __DAQ_VERSION_EXAMPLE_X_YY_Z_RC_HASH="$__DAQ_VERSION_EXAMPLE_X_YY_Z_RC-$__DAQ_VERSION_EXAMPLE_HASH"
+
+readonly __DAQ_VERSION_EXAMPLE_vX_YY_Z="v$__DAQ_VERSION_EXAMPLE_X_YY_Z_RC"
+readonly __DAQ_VERSION_EXAMPLE_vX_YY_Z_RC="v$__DAQ_VERSION_EXAMPLE_X_YY_Z"
+readonly __DAQ_VERSION_EXAMPLE_vX_YY_Z_HASH="v$__DAQ_VERSION_EXAMPLE_X_YY_Z_HASH"
+readonly __DAQ_VERSION_EXAMPLE_vX_YY_Z_RC_HASH="v$__DAQ_VERSION_EXAMPLE_X_YY_Z_RC_HASH"
+
 __daq_version_help_short() {
-    cat << 'EOF'
+    cat << EOF
 version-format - Version string manipulation tool for openDAQ
 
 USAGE:
@@ -173,10 +150,10 @@ GLOBAL OPTIONS:
   --debug, -d               Enable debug output
 
 EXAMPLES:
-  version-format validate v3.14.2
-  version-format parse v3.14.2-rc-abc123f --major --type
-  version-format compose --major 3 --minor 14 --patch 2 --suffix rc
-  version-format v3.14.2 --detect-type
+  version-format validate ${__DAQ_VERSION_EXAMPLE_vX_YY_Z}
+  version-format parse ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC_HASH} --major --type
+  version-format compose --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH} --suffix rc
+  version-format ${__DAQ_VERSION_EXAMPLE_vX_YY_Z} --detect-type
 
 For detailed help on a command:
   version-format <COMMAND> --help
@@ -189,7 +166,7 @@ EOF
 ################################################################################
 
 __daq_version_help() {
-    cat << 'EOF'
+    cat << EOF
 version-format - Version string manipulation tool for openDAQ
 
 DESCRIPTION:
@@ -223,9 +200,9 @@ validate <VERSION> [OPTIONS]
     --has-hash              Check if version has hash
 
   EXAMPLES:
-    version-format validate v3.14.2 --format vX.YY.Z
-    version-format validate v3.14.2-rc --is-rc
-    version-format validate 3.14.2-abc123f --has-hash
+    version-format validate ${__DAQ_VERSION_EXAMPLE_vX_YY_Z} --format vX.YY.Z
+    version-format validate ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC} --is-rc
+    version-format validate ${__DAQ_VERSION_EXAMPLE_X_YY_Z_HASH} --has-hash
 
 parse <VERSION> [OPTIONS]
   Parse version string into components
@@ -246,9 +223,9 @@ parse <VERSION> [OPTIONS]
     Multiple flags: KEY=VALUE for each requested component
 
   EXAMPLES:
-    version-format parse v3.14.2-rc-abc123f
-    version-format parse v3.14.2 --major
-    version-format parse v3.14.2-rc --major --type
+    version-format parse ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC_HASH}
+    version-format parse ${__DAQ_VERSION_EXAMPLE_vX_YY_Z} --major
+    version-format parse ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC} --major --type
 
 compose [OPTIONS]
   Compose version string from components
@@ -275,9 +252,10 @@ compose [OPTIONS]
     4. Default format       (lowest)
 
   EXAMPLES:
-    version-format compose --major 3 --minor 14 --patch 2
-    version-format compose --major 3 --minor 14 --patch 2 --suffix rc
-    version-format compose --major 3 --minor 14 --patch 2 --format X.YY.Z-HASH --hash abc123f
+    version-format compose --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH}
+                           --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH}
+    version-format compose --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH} --suffix rc
+    version-format compose --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH} --format X.YY.Z-HASH --hash ${OPENDAQ_VERSION_PARSED_HASH}
     version-format compose --from-env
 
 extract <TEXT> [OPTIONS]
@@ -287,8 +265,8 @@ extract <TEXT> [OPTIONS]
     --verbose               Show detailed extraction info
 
   EXAMPLES:
-    version-format extract "Release v3.14.2 is ready"
-    echo "opendaq-v3.14.2-rc" | version-format extract -
+    version-format extract "Release ${__DAQ_VERSION_EXAMPLE_vX_YY_Z} is ready"
+    echo "opendaq-${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC}" | version-format extract -
 
 ═══════════════════════════════════════════════════════════════════════════
 QUERY COMMANDS
@@ -333,14 +311,14 @@ DETECTION COMMANDS
     custom-dev   suffix!="rc", has hash
 
   EXAMPLE:
-    version-format v3.14.2-rc --detect-type
+    version-format ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC} --detect-type
     # Output: rc
 
 <VERSION> --detect-format
   Detect and return format template
 
   EXAMPLE:
-    version-format v3.14.2-rc-abc123f --detect-format
+    version-format ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC_HASH} --detect-format
     # Output: vX.YY.Z-rc-HASH
 
 ═══════════════════════════════════════════════════════════════════════════
@@ -414,30 +392,30 @@ EXAMPLES
 ═══════════════════════════════════════════════════════════════════════════
 
 # Parse and extract components
-version-format parse v3.14.2-rc-abc123f
-version-format parse v3.14.2 --major
-version-format parse v3.14.2-rc --major --minor --type
+version-format parse ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC_HASH}
+version-format parse ${__DAQ_VERSION_EXAMPLE_vX_YY_Z} --major
+version-format parse ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC} --major --minor --type
 
 # Validate versions
-version-format validate v3.14.2
-version-format validate v3.14.2-rc --is-rc
-version-format validate 3.14.2-abc123f --has-hash
+version-format validate ${__DAQ_VERSION_EXAMPLE_vX_YY_Z}
+version-format validate ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC} --is-rc
+version-format validate ${__DAQ_VERSION_EXAMPLE_X_YY_Z_HASH} --has-hash
 
 # Compose versions
-version-format compose --major 3 --minor 14 --patch 2
-version-format compose --major 3 --minor 14 --patch 2 --suffix rc --hash abc123f
+version-format compose --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH}
+version-format compose --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH} --suffix rc --hash ${OPENDAQ_VERSION_PARSED_HASH}
 
 # Detect type and format
-version-format v3.14.2-rc --detect-type
-version-format v3.14.2-rc-abc123f --detect-format
+version-format ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC} --detect-type
+version-format ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC_HASH} --detect-format
 
 # List available formats and types
 version-format --list-formats
 version-format --list-types --verbose
 
 # Extract from text
-version-format extract "Release v3.14.2 is available"
-echo "opendaq-v3.14.2-rc" | version-format extract -
+version-format extract "Release ${__DAQ_VERSION_EXAMPLE_vX_YY_Z} is available"
+echo "opendaq-${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC}" | version-format extract -
 
 VERSION: $SCRIPT_VERSION
 BUILD:   $SCRIPT_BUILD_DATE
@@ -450,7 +428,7 @@ EOF
 ################################################################################
 
 __daq_version_help_validate() {
-    cat << 'EOF'
+    cat << EOF
 version-format validate - Validate version string
 
 USAGE:
@@ -476,18 +454,18 @@ OPTIONS:
 
 EXAMPLES:
   # Basic validation
-  version-format validate v3.14.2
+  version-format validate ${__DAQ_VERSION_EXAMPLE_vX_YY_Z}
 
   # Validate against format
-  version-format validate v3.14.2 --format vX.YY.Z
+  version-format validate ${__DAQ_VERSION_EXAMPLE_vX_YY_Z} --format vX.YY.Z
 
   # Type checks
-  version-format validate v3.14.2-rc --is-rc
-  version-format validate v3.14.2-abc123f --is-dev
+  version-format validate ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC} --is-rc
+  version-format validate ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_HASH} --is-dev
 
   # Component checks
-  version-format validate v3.14.2 --has-prefix
-  version-format validate 3.14.2-rc --has-suffix
+  version-format validate ${__DAQ_VERSION_EXAMPLE_vX_YY_Z} --has-prefix
+  version-format validate ${__DAQ_VERSION_EXAMPLE_X_YY_Z_RC} --has-suffix
 
 EXIT CODES:
   0 - Version is valid
@@ -502,7 +480,7 @@ EOF
 ################################################################################
 
 __daq_version_help_parse() {
-    cat << 'EOF'
+    cat << EOF
 version-format parse - Parse version string
 
 USAGE:
@@ -530,7 +508,7 @@ OUTPUT RULES:
 
 EXAMPLES:
   # Parse all components
-  version-format parse v3.14.2-rc-abc123f
+  version-format parse ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC_HASH}
   # Output:
   # OPENDAQ_VERSION_PARSED_MAJOR=3
   # OPENDAQ_VERSION_PARSED_MINOR=14
@@ -542,11 +520,11 @@ EXAMPLES:
   # OPENDAQ_VERSION_PARSED_FORMAT=vX.YY.Z-rc-HASH
 
   # Extract single component (value only)
-  version-format parse v3.14.2 --major
+  version-format parse ${__DAQ_VERSION_EXAMPLE_vX_YY_Z} --major
   # Output: 3
 
   # Extract multiple components (KEY=VALUE)
-  version-format parse v3.14.2-rc --major --minor --type
+  version-format parse ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC} --major --minor --type
   # Output:
   # OPENDAQ_VERSION_PARSED_MAJOR=3
   # OPENDAQ_VERSION_PARSED_MINOR=14
@@ -565,7 +543,7 @@ EOF
 ################################################################################
 
 __daq_version_help_compose() {
-    cat << 'EOF'
+    cat << EOF
 version-format compose - Compose version string
 
 USAGE:
@@ -599,28 +577,28 @@ FORMAT PRIORITY (highest to lowest):
 
 EXAMPLES:
   # Simple release version
-  version-format compose --major 3 --minor 14 --patch 2
-  # Output: v3.14.2
+  version-format compose --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH}
+  # Output: ${__DAQ_VERSION_EXAMPLE_vX_YY_Z}
 
   # Release candidate
-  version-format compose --major 3 --minor 14 --patch 2 --suffix rc
-  # Output: v3.14.2-rc
+  version-format compose --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH} --suffix rc
+  # Output: ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC}
 
   # Development version with hash
-  version-format compose --major 3 --minor 14 --patch 2 --hash abc123f
-  # Output: v3.14.2-abc123f
+  version-format compose --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH} --hash ${OPENDAQ_VERSION_PARSED_HASH}
+  # Output: ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_HASH}
 
   # Custom format
-  version-format compose --major 3 --minor 14 --patch 2 --format X.YY.Z-rc
-  # Output: 3.14.2-rc
+  version-format compose --major ${__DAQ_VERSION_EXAMPLE_MAJOR} --minor ${__DAQ_VERSION_EXAMPLE_MINOR} --patch ${__DAQ_VERSION_EXAMPLE_PATCH} --format X.YY.Z-rc
+  # Output: ${__DAQ_VERSION_EXAMPLE_X_YY_Z_RC}
 
   # From environment variables
-  export OPENDAQ_VERSION_COMPOSED_MAJOR=3
-  export OPENDAQ_VERSION_COMPOSED_MINOR=14
-  export OPENDAQ_VERSION_COMPOSED_PATCH=2
+  export OPENDAQ_VERSION_COMPOSED_MAJOR=${__DAQ_VERSION_EXAMPLE_MAJOR}
+  export OPENDAQ_VERSION_COMPOSED_MINOR=${__DAQ_VERSION_EXAMPLE_MINOR}
+  export OPENDAQ_VERSION_COMPOSED_PATCH=${__DAQ_VERSION_EXAMPLE_PATCH}
   export OPENDAQ_VERSION_COMPOSED_SUFFIX=rc
   version-format compose --from-env
-  # Output: v3.14.2-rc
+  # Output: ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC}
 
 EXIT CODES:
   0 - Success
@@ -635,7 +613,7 @@ EOF
 ################################################################################
 
 __daq_version_help_extract() {
-    cat << 'EOF'
+    cat << EOF
 version-format extract - Extract version from text
 
 USAGE:
@@ -651,15 +629,15 @@ OPTIONS:
 
 EXAMPLES:
   # Extract from string
-  version-format extract "Release v3.14.2 is available"
-  # Output: v3.14.2
+  version-format extract "Release ${__DAQ_VERSION_EXAMPLE_vX_YY_Z} is available"
+  # Output: ${__DAQ_VERSION_EXAMPLE_vX_YY_Z}
 
   # Extract from stdin
-  echo "opendaq-v3.14.2-rc-abc123f.tar.gz" | version-format extract -
-  # Output: v3.14.2-rc-abc123f
+  echo "opendaq-${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC_HASH}.tar.gz" | version-format extract -
+  # Output: ${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC_HASH}
 
   # With verbose output
-  version-format extract "Version: v3.14.2" --verbose
+  version-format extract "Version: ${__DAQ_VERSION_EXAMPLE_vX_YY_Z}" --verbose
 
 EXIT CODES:
   0 - Version found and extracted
@@ -1566,27 +1544,27 @@ daq_version_type_list() {
             case "$type" in
                 release)
                     desc="Release version (no suffix, no hash)"
-                    example="v3.14.2"
+                    example="${__DAQ_VERSION_EXAMPLE_vX_YY_Z}"
                     ;;
                 rc)
                     desc="Release candidate (suffix='rc', no hash)"
-                    example="v3.14.2-rc"
+                    example="${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC}"
                     ;;
                 dev)
                     desc="Development version (no suffix, has hash)"
-                    example="v3.14.2-abc123f"
+                    example="${__DAQ_VERSION_EXAMPLE_vX_YY_Z_HASH}"
                     ;;
                 rc-dev)
                     desc="RC with commits (suffix='rc', has hash)"
-                    example="v3.14.2-rc-abc123f"
+                    example="${__DAQ_VERSION_EXAMPLE_vX_YY_Z_RC_HASH}"
                     ;;
                 custom)
                     desc="Custom suffix (suffix!='rc', no hash)"
-                    example="v3.14.2-beta"
+                    example="$__DAQ_VERSION_EXAMPLE_vX_YY_Z-beta"
                     ;;
                 custom-dev)
                     desc="Custom suffix with hash (suffix!='rc', has hash)"
-                    example="v3.14.2-beta-abc123f"
+                    example="$__DAQ_VERSION_EXAMPLE_vX_YY_Z-beta-${__DAQ_VERSION_EXAMPLE_HASH}"
                     ;;
                 *)
                     desc="Unknown type"

@@ -1,24 +1,29 @@
 #!/usr/bin/env bash
 
-# Safe options set
-if [[ -n "${BASH_VERSION:-}" ]]; then
-    set -euo pipefail
+# ==============================================================================
+# api-github-gh.sh - GitHub API wrapper for working with releases
+# Compatible with: Bash 3.2+, Zsh, Linux, macOS, Windows (Git Bash, WSL, Cygwin)
+# ==============================================================================
+
+# Strict mode: nounset for catching typos, pipefail for catching errors in pipes
+# We do NOT use errexit (-e) because we explicitly handle errors in our functions
+
+set -u  # Exit on undefined variables
+
+if [[ -n "${BASH_VERSION:-}" ]]; then    
+    # Enable pipefail for Bash 4+ (not available in Bash 3.2)
+    if [[ "${BASH_VERSINFO:-0}" -ge 4 ]]; then
+        set -o pipefail
+    fi
 elif [[ -n "${ZSH_VERSION:-}" ]]; then
-    set -eu
-    setopt PIPE_FAIL 2>/dev/null || true
+    setopt PIPE_FAIL 2>/dev/null || true  # Zsh equivalent of pipefail
 fi
 
-# ==============================================================================
-# api-github-gh - GitHub Release API wrapper using gh CLI
-# Compatible with bash 3.2+ (macOS default) and zsh
-# ==============================================================================
-
-# Detect the shell and run mode
 __DAQ_GH_API_SHELL="unknown"
 if [[ -n "${BASH_VERSION:-}" ]]; then
     __DAQ_GH_API_SHELL="bash"
     __DAQ_GH_API_SHELL_VERSION="${BASH_VERSION}"
-    # Check whether the source mode is used for bash
+    # Check if sourced (BASH_SOURCE available since Bash 3.0)
     if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
         __DAQ_GH_API_SOURCED=1
         __DAQ_GH_API_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,8 +34,9 @@ if [[ -n "${BASH_VERSION:-}" ]]; then
 elif [[ -n "${ZSH_VERSION:-}" ]]; then
     __DAQ_GH_API_SHELL="zsh"
     __DAQ_GH_API_SHELL_VERSION="${ZSH_VERSION}"
-    # Check whether the source mode is used for zsh
-    if [[ "${(%):-%N}" != "${0}" ]]; then
+    # Check if sourced in Zsh
+    # Using $0 vs ${(%):-%x} comparison (more reliable than %N)
+    if [[ "${ZSH_EVAL_CONTEXT:-}" == *:file ]]; then
         __DAQ_GH_API_SOURCED=1
         __DAQ_GH_API_SCRIPT_DIR="$(cd "$(dirname "${(%):-%N}")" && pwd)"
     else
@@ -38,6 +44,7 @@ elif [[ -n "${ZSH_VERSION:-}" ]]; then
         __DAQ_GH_API_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
     fi
 else
+    # Unknown shell, assume not sourced
     __DAQ_GH_API_SOURCED=0
     __DAQ_GH_API_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 fi
@@ -53,6 +60,9 @@ __DAQ_GH_API_REPO=""
 __DAQ_GH_API_OWNER=""
 __DAQ_GH_API_VERSION=""
 __DAQ_GH_API_PATTERN=""
+__DAQ_GH_API_RUN_ID=""
+__DAQ_GH_API_EXTRACT=0
+
 __DAQ_GH_API_GITHUB_REPO="${OPENDAQ_GH_API_GITHUB_REPO:-}"
 __DAQ_GH_API_CACHE_DIR="${OPENDAQ_GH_API_CACHE_DIR:-${TMPDIR:-${TEMP:-${TMP:-/tmp}}}}"
 __DAQ_GH_API_CACHE_DIR_RESPONSE="${__DAQ_GH_API_CACHE_DIR/response}"
@@ -71,6 +81,27 @@ __daq_api_gh_regex_match() {
     echo "$string" | grep -qE "$pattern"
 }
 
+__daq_api_gh_normalize_path() {
+    local path="$1"
+    local normalized=""
+    
+    if [[ -z "$path" ]]; then
+        echo ""
+        return 0
+    fi
+    
+    normalized="$path"
+    normalized="${normalized//\\//}"
+    
+    if __daq_api_gh_regex_match "$normalized" "^[a-zA-Z]:"; then
+        local drive="${normalized:0:1}"
+        drive=$(echo "$drive" | tr '[:upper:]' '[:lower:]')
+        normalized="/${drive}${normalized:2}"
+    fi
+    
+    echo "$normalized"
+}
+
 # ------------------------------------------------------------------------------
 # Private help functions
 # ------------------------------------------------------------------------------
@@ -87,10 +118,14 @@ OPTIONS:
     --version VERSION    Check specific version (default: latest)
     --list-versions      List all available versions
     --list-assets        List assets for a version
+    --list-runs          List latest workflow runs
+    --list-artifacts     List artifacts for run-id
     --download-asset     Download assets for a version
     --pattern PATTERN    Filter assets by pattern (glob-style)
     --output-dir DIR     Output directory for downloads (required with --download-asset)
     --limit N            Limit number of versions (default: 30, use 'all' for all)
+    --run-id ID          ID workflow run (mandatory)
+    --extract            Extract artifacts from zip after downloading
     --verbose            Enable verbose output
     --help               Show this help
 
@@ -124,6 +159,21 @@ EXAMPLES:
     
     # Download filtered assets
     ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --download-asset --pattern "*ubuntu*" --output-dir ./downloads/ubuntu-builds
+
+    # List workflows runs
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-runs
+
+    # List artifacts produced by a workflow with run ID
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-artifacts --run-id RUN_ID
+    
+    # Download all artifacts produced by a workflow with run ID
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --download-artifact --run-id RUN_ID --output-dir ./artifacts
+
+    # Download all artifacts produced by a workflow with run ID and extract them
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --download-artifact --run-id RUN_ID --output-dir ./artifacts --extract
+
+    # Download filterd artifacts by pattern produced by a workflow with run ID and extract them
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --download-artifact --run-id RUN_ID --pattern "*ubuntu*" --output-dir ./artifacts
 
 ENVIRONMENT:
     OPENDAQ_GH_API_DEBUG=1          Enable debug output
@@ -523,6 +573,68 @@ daq_api_gh_assets_urls() {
 }
 
 # ------------------------------------------------------------------------------
+# Artefacts functions
+# ------------------------------------------------------------------------------
+
+daq_api_gh_artifacts_list() {
+    local run_id="${1:-}"
+    
+    if [[ -z "$run_id" ]]; then
+        __daq_api_gh_error "Run ID not specified for artifacts list"
+        return 1
+    fi
+    
+    local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/actions/runs/${run_id}/artifacts"
+    local temp_file="/tmp/gh_response_$$"
+    
+    __daq_api_gh_info "Listing artifacts for run ${run_id}"
+    
+    if ! daq_api_gh_request "$endpoint" > "$temp_file"; then
+        rm -f "$temp_file"
+        __daq_api_gh_error "Failed to get artifacts for run ${run_id}"
+        return 1
+    fi
+    
+    # Output based on verbose flag
+    if [[ $__DAQ_GH_API_VERBOSE -eq 1 ]]; then
+        # Format: name, size in MB, expiration
+        jq -r '.artifacts[] | "\(.name)\t\(.size_in_bytes/1048576 | floor)MB\t\(.expires_at)"' < "$temp_file"
+    else
+        # Just names
+        jq -r '.artifacts[].name' < "$temp_file"
+    fi
+    
+    rm -f "$temp_file"
+}
+
+# ------------------------------------------------------------------------------
+# Workflows functions
+# ------------------------------------------------------------------------------
+
+daq_api_gh_runs_list() {
+    local limit="${1:-20}"
+    local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/actions/runs?per_page=${limit}"
+    local temp_file="/tmp/gh_response_$$"
+    
+    __daq_api_gh_info "Listing workflow runs for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}"
+    
+    if ! daq_api_gh_request "$endpoint" > "$temp_file"; then
+        rm -f "$temp_file"
+        __daq_api_gh_error "Failed to get workflow runs"
+        return 1
+    fi
+    
+    # Simple output: id, status, conclusion, workflow_name
+    if [[ $__DAQ_GH_API_VERBOSE -eq 1 ]]; then
+        jq -r '.workflow_runs[] | "\(.id)\t\(.status)\t\(.conclusion // "pending")\t\(.name)\t\(.created_at)"' < "$temp_file"
+    else
+        jq -r '.workflow_runs[] | "\(.id)\t\(.name)"' < "$temp_file"
+    fi
+    
+    rm -f "$temp_file"
+}
+
+# ------------------------------------------------------------------------------
 # Download functions
 # ------------------------------------------------------------------------------
 
@@ -652,6 +764,144 @@ daq_api_gh_assets_download() {
     return 0
 }
 
+__daq_api_gh_download_single_artifact() {
+    local artifact_id="$1"
+    local artifact_name="$2"
+    local artifact_size="$3"
+    local output_path="$4"
+    
+    # Format size for display
+    local size_mb=$((artifact_size / 1048576))
+    __daq_api_gh_info "Downloading artifact: $artifact_name (size: ${size_mb}MB)"
+    
+    local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/actions/artifacts/${artifact_id}/zip"
+    
+    # Download using gh api (follows redirects automatically)
+    if gh api -H "Accept: application/vnd.github.v3+json" "$endpoint" > "$output_path" 2>/dev/null; then
+        __daq_api_gh_debug "Successfully downloaded: $artifact_name"
+        return 0
+    else
+        __daq_api_gh_error "Failed to download artifact: $artifact_name"
+        rm -f "$output_path"
+        return 1
+    fi
+}
+
+daq_api_gh_artifacts_download() {
+    local run_id="${1:-}"
+    local output_dir="${2:-}"
+    local pattern="${3:-}"
+    local extract="${4:-0}"
+    
+    # Validate inputs
+    if [[ -z "$run_id" ]]; then
+        __daq_api_gh_error "Run ID not specified for download"
+        return 1
+    fi
+    
+    if [[ -z "$output_dir" ]]; then
+        __daq_api_gh_error "--output-dir is required for --download-artifact"
+        return 1
+    fi
+    
+    # Create output directory if needed
+    if [[ ! -d "$output_dir" ]]; then
+        __daq_api_gh_info "Creating directory: $output_dir"
+        if ! mkdir -p "$output_dir"; then
+            __daq_api_gh_error "Cannot create directory: $output_dir"
+            return 1
+        fi
+    fi
+    
+    # Check write permissions
+    if [[ ! -w "$output_dir" ]]; then
+        __daq_api_gh_error "Cannot write to directory: $output_dir"
+        return 1
+    fi
+    
+    local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/actions/runs/${run_id}/artifacts"
+    local temp_file="/tmp/gh_response_$$"
+    
+    __daq_api_gh_info "Getting artifacts for run ${run_id}"
+    
+    if ! daq_api_gh_request "$endpoint" > "$temp_file"; then
+        rm -f "$temp_file"
+        __daq_api_gh_error "Failed to get artifacts for run ${run_id}"
+        return 1
+    fi
+    
+    # Build jq query based on pattern
+    local jq_query
+    if [[ -n "$pattern" ]]; then
+        local jq_pattern
+        jq_pattern=$(echo "$pattern" | sed 's/\*/\.\*/g' | sed 's/?/\./g')
+        jq_query=".artifacts[] | select(.name | test(\"$jq_pattern\")) | {id: .id, name: .name, size: .size_in_bytes}"
+    else
+        jq_query='.artifacts[] | {id: .id, name: .name, size: .size_in_bytes}'
+    fi
+    
+    # Get artifacts to download
+    local artifacts_json
+    artifacts_json=$(jq -c "$jq_query" < "$temp_file" 2>/dev/null)
+    rm -f "$temp_file"
+    
+    if [[ -z "$artifacts_json" ]]; then
+        if [[ -n "$pattern" ]]; then
+            __daq_api_gh_info "No artifacts matching pattern '$pattern' for run ${run_id}"
+        else
+            __daq_api_gh_info "No artifacts found for run ${run_id}"
+        fi
+        return 0
+    fi
+    
+    # Download each artifact
+    local download_count=0
+    local error_count=0
+    
+    echo "$artifacts_json" | while IFS= read -r artifact; do
+        local id=$(echo "$artifact" | jq -r '.id')
+        local name=$(echo "$artifact" | jq -r '.name')
+        local size=$(echo "$artifact" | jq -r '.size')
+        local output_path="${output_dir}/${name}.zip"
+        
+        # Check if file exists
+        if [[ -f "$output_path" ]]; then
+            __daq_api_gh_error "File already exists: $output_path"
+            error_count=$((error_count + 1))
+            continue
+        fi
+        
+        # Download the artifact
+        if __daq_api_gh_download_single_artifact "$id" "$name" "$size" "$output_path"; then
+            download_count=$((download_count + 1))
+            
+            # Extract if requested
+            if [[ $extract -eq 1 ]]; then
+                __daq_api_gh_info "Extracting: $name.zip"
+                if command -v unzip >/dev/null 2>&1; then
+                    unzip -q "$output_path" -d "${output_dir}/${name}" && rm "$output_path"
+                else
+                    __daq_api_gh_error "unzip not found, keeping archive: $output_path"
+                fi
+            fi
+        else
+            error_count=$((error_count + 1))
+        fi
+    done
+    
+    # Summary
+    if [[ $download_count -gt 0 ]]; then
+        echo "Downloaded $download_count artifact(s) to $output_dir"
+    fi
+    
+    if [[ $error_count -gt 0 ]]; then
+        __daq_api_gh_error "Failed to download $error_count artifact(s)"
+        return 1
+    fi
+    
+    return 0
+}
+
 # ------------------------------------------------------------------------------
 # Main function
 # ------------------------------------------------------------------------------
@@ -716,6 +966,31 @@ __daq_api_gh_main() {
             --help|-h)
                 __daq_api_gh_help
                 return 0
+                ;;
+                # Добавить в парсер:
+            --download-artifact)
+                action="download-artifact"
+                shift
+                ;;
+            --list-runs)
+                action="list-runs"
+                shift
+                ;;
+            --list-artifacts)
+                action="list-artifacts"
+                shift
+                ;;
+            --run-id)
+                if [[ $# -lt 2 ]]; then
+                    __daq_api_gh_error "Option --run-id requires an argument"
+                    return 1
+                fi
+                __DAQ_GH_API_RUN_ID="$2"
+                shift 2
+                ;;
+            --extract)
+                __DAQ_GH_API_EXTRACT=1
+                shift
                 ;;
             --*)
                 __daq_api_gh_error "Unknown option: $1"
@@ -787,6 +1062,30 @@ __daq_api_gh_main() {
             # Download assets
             daq_api_gh_assets_download "$__DAQ_GH_API_VERSION" "$__DAQ_GH_API_OUTPUT_DIR" "$__DAQ_GH_API_PATTERN"
             ;;
+        # Добавить в case statement:
+        list-runs)
+            daq_api_gh_runs_list
+            ;;
+
+        list-artifacts)
+            if [[ -z "$__DAQ_GH_API_RUN_ID" ]]; then
+                __daq_api_gh_error "--run-id is required for --list-artifacts"
+                return 1
+            fi
+            daq_api_gh_artifacts_list "$__DAQ_GH_API_RUN_ID"
+            ;;
+
+        download-artifact)
+            if [[ -z "$__DAQ_GH_API_RUN_ID" ]]; then
+                __daq_api_gh_error "--run-id is required for --download-artifact"
+                return 1
+            fi
+            if [[ -z "$__DAQ_GH_API_OUTPUT_DIR" ]]; then
+                __daq_api_gh_error "--output-dir is required for --download-artifact"
+                return 1
+            fi
+            daq_api_gh_artifacts_download "$__DAQ_GH_API_RUN_ID" "$__DAQ_GH_API_OUTPUT_DIR" "$__DAQ_GH_API_PATTERN" "$__DAQ_GH_API_EXTRACT"
+            ;;
         *)
             __daq_api_gh_error "Action not specified"
             __daq_api_gh_help
@@ -799,6 +1098,7 @@ __daq_api_gh_main() {
 # ------------------------------------------------------------------------------
 
 if [[ "${__DAQ_GH_API_SOURCED}" -eq 0 ]]; then
+    echo "SOURCED -> ${__DAQ_GH_API_SOURCED}"
     __daq_api_gh_main "$@"
     exit $?
 fi
