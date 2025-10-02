@@ -46,7 +46,6 @@ fi
 OPENDAQ_GH_API_VERSION="1.0.0"
 OPENDAQ_GH_API_DEBUG="${OPENDAQ_GH_API_DEBUG:-0}"
 OPENDAQ_GH_API_INITIALIZED=0
-OPENDAQ_GH_API_GITHUB_REPO="${OPENDAQ_GH_API_GITHUB_REPO:-}"
 
 # Private variables
 __DAQ_GH_API_VERBOSE=0
@@ -54,6 +53,10 @@ __DAQ_GH_API_REPO=""
 __DAQ_GH_API_OWNER=""
 __DAQ_GH_API_VERSION=""
 __DAQ_GH_API_PATTERN=""
+__DAQ_GH_API_GITHUB_REPO="${OPENDAQ_GH_API_GITHUB_REPO:-}"
+__DAQ_GH_API_CACHE_DIR="${OPENDAQ_GH_API_CACHE_DIR:-${TMPDIR:-${TEMP:-${TMP:-/tmp}}}}"
+__DAQ_GH_API_CACHE_DIR_RESPONSE="${__DAQ_GH_API_CACHE_DIR/response}"
+__DAQ_GH_API_CACHE_DIR_ERROR="${__DAQ_GH_API_CACHE_DIR/error}"
 
 # ------------------------------------------------------------------------------
 # Compatibility helpers
@@ -182,7 +185,7 @@ __daq_api_gh_check_deps() {
 # Generic API request wrapper
 daq_api_gh_request() {
     local endpoint="$1"
-    local temp_error="/tmp/gh_error_$$"
+    local temp_error="${__DAQ_GH_API_CACHE_DIR_ERROR}/gh_error_$$"
     
     __daq_api_gh_debug "API request: gh api $endpoint"
     
@@ -269,7 +272,7 @@ daq_api_gh_repo_parse() {
 # Get latest release version
 daq_api_gh_version_latest() {
     local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases/latest"
-    local temp_file="/tmp/gh_response_$$"
+    local temp_file="${__DAQ_GH_API_CACHE_DIR_RESPONSE}/gh_response_$$"
     
     __daq_api_gh_info "Getting latest version for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}"
     
@@ -343,7 +346,7 @@ daq_api_gh_version_resolve() {
 daq_api_gh_version_list() {
     local limit="${1:-30}"
     local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases"
-    local temp_file="/tmp/gh_response_$$"
+    local temp_file="${__DAQ_GH_API_CACHE_DIR_RESPONSE}/gh_response_$$"
     
     __daq_api_gh_info "Listing versions for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}"
     
@@ -381,7 +384,7 @@ daq_api_gh_assets_list() {
     fi
     
     local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases/tags/${version}"
-    local temp_file="/tmp/gh_response_$$"
+    local temp_file="${__DAQ_GH_API_CACHE_DIR_RESPONSE}/gh_response_$$"
     
     __daq_api_gh_info "Listing assets for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO} version $version"
     
@@ -423,7 +426,7 @@ daq_api_gh_assets_filter() {
     fi
     
     local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases/tags/${version}"
-    local temp_file="/tmp/gh_response_$$"
+    local temp_file="${__DAQ_GH_API_CACHE_DIR_RESPONSE}/gh_response_$$"
     
     __daq_api_gh_info "Filtering assets for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO} version $version with pattern: $pattern"
     
@@ -465,7 +468,7 @@ daq_api_gh_assets_urls() {
     fi
     
     local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases/tags/${version}"
-    local temp_file="/tmp/gh_response_$$"
+    local temp_file="${__DAQ_GH_API_CACHE_DIR_RESPONSE}/gh_response_$$"
     
     __daq_api_gh_info "Getting asset URLs for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO} version $version"
     
@@ -511,7 +514,7 @@ daq_api_gh_assets_urls() {
 # ------------------------------------------------------------------------------
 
 __daq_api_gh_main() {
-    local repo=${OPENDAQ_GH_API_GITHUB_REPO}
+    local repo=${__DAQ_GH_API_GITHUB_REPO}
     local action=""
     local limit="30"
     
