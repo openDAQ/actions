@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Используем env для переносимости
 
-# Безопасная установка опций
+# Safe options set
 if [[ -n "${BASH_VERSION:-}" ]]; then
     set -euo pipefail
 elif [[ -n "${ZSH_VERSION:-}" ]]; then
@@ -14,12 +13,12 @@ fi
 # Compatible with bash 3.2+ (macOS default) and zsh
 # ==============================================================================
 
-# Определение shell и режима запуска
+# Detect the shell and run mode
 __DAQ_GH_API_SHELL="unknown"
 if [[ -n "${BASH_VERSION:-}" ]]; then
     __DAQ_GH_API_SHELL="bash"
     __DAQ_GH_API_SHELL_VERSION="${BASH_VERSION}"
-    # Проверка режима source для bash
+    # Check whether the source mode is used for bash
     if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
         __DAQ_GH_API_SOURCED=1
         __DAQ_GH_API_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,7 +29,7 @@ if [[ -n "${BASH_VERSION:-}" ]]; then
 elif [[ -n "${ZSH_VERSION:-}" ]]; then
     __DAQ_GH_API_SHELL="zsh"
     __DAQ_GH_API_SHELL_VERSION="${ZSH_VERSION}"
-    # Проверка режима source для zsh
+    # Check whether the source mode is used for zsh
     if [[ "${(%):-%N}" != "${0}" ]]; then
         __DAQ_GH_API_SOURCED=1
         __DAQ_GH_API_SCRIPT_DIR="$(cd "$(dirname "${(%):-%N}")" && pwd)"
@@ -47,28 +46,80 @@ fi
 OPENDAQ_GH_API_VERSION="1.0.0"
 OPENDAQ_GH_API_DEBUG="${OPENDAQ_GH_API_DEBUG:-0}"
 OPENDAQ_GH_API_INITIALIZED=0
+OPENDAQ_GH_API_GITHUB_REPO="${OPENDAQ_GH_API_GITHUB_REPO:-}"
 
 # Private variables
 __DAQ_GH_API_VERBOSE=0
 __DAQ_GH_API_REPO=""
 __DAQ_GH_API_OWNER=""
 __DAQ_GH_API_VERSION=""
+__DAQ_GH_API_PATTERN=""
 
 # ------------------------------------------------------------------------------
 # Compatibility helpers
 # ------------------------------------------------------------------------------
 
-# Безопасное сравнение для старых bash
+# Safe comparison for older bash versions
 __daq_api_gh_regex_match() {
     local string="$1"
     local pattern="$2"
     
-    # Для bash 3.2 на macOS - используем простой grep
+    # The bash 3.2 (on macOS) - simply use grep
     echo "$string" | grep -qE "$pattern"
 }
 
 # ------------------------------------------------------------------------------
-# Private logging functions (совместимы с bash 3.2 и zsh)
+# Private help functions
+# ------------------------------------------------------------------------------
+
+__DAQ_GH_API_HELP_EXAMPLE_REPO="openDAQ/openDAQ"
+__DAQ_GH_API_HELP_EXAMPLE_VERSION="v3.30.0"
+__DAQ_GH_API_HELP_EXAMPLE_PATTERN="*linux*amd64*"
+
+__daq_api_gh_help() {
+    cat <<EOF
+Usage: api-github-gh OWNER/REPO [OPTIONS]
+
+OPTIONS:
+    --version VERSION    Check specific version (default: latest)
+    --list-versions      List all available versions
+    --list-assets        List assets for a version
+    --pattern PATTERN    Filter assets by pattern (glob-style)
+    --limit N            Limit number of versions (default: 30, use 'all' for all)
+    --verbose            Enable verbose output
+    --help               Show this help
+
+EXAMPLES:
+    # Get latest version
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO}
+    
+    # Verify specific version
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --version ${__DAQ_GH_API_HELP_EXAMPLE_VERSION}
+    
+    # List all versions
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-versions
+    
+    # List assets for latest version
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-assets
+    
+    # List assets for specific version
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-assets --version ${__DAQ_GH_API_HELP_EXAMPLE_VERSION}
+    
+    # Filter assets by pattern
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-assets --version ${__DAQ_GH_API_HELP_EXAMPLE_VERSION} --pattern "${__DAQ_GH_API_HELP_EXAMPLE_PATTERN}"
+    
+    # Get last 5 versions
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-versions --limit 5
+
+ENVIRONMENT:
+    OPENDAQ_GH_API_DEBUG=1    Enable debug output
+
+Shell: ${__DAQ_GH_API_SHELL} ${__DAQ_GH_API_SHELL_VERSION}
+EOF
+}
+
+# ------------------------------------------------------------------------------
+# Private logging functions (compatible with bash 3.2 and zsh)
 # ------------------------------------------------------------------------------
 
 __daq_api_gh_log() {
@@ -201,13 +252,13 @@ daq_api_gh_repo_parse() {
         return 1
     fi
     
-    # Используем grep вместо =~ для совместимости
+    # Use grep instead of =~ for compatibility
     if ! __daq_api_gh_regex_match "$repo" "^[^/]+/[^/]+$"; then
         __daq_api_gh_error "Invalid repository format. Expected: owner/repo"
         return 1
     fi
     
-    # Безопасное разделение строки (работает в bash 3.2 и zsh)
+    # Safe strings separation (works for both bash 3.2 and zsh)
     __DAQ_GH_API_OWNER="${repo%%/*}"
     __DAQ_GH_API_REPO="${repo#*/}"
     
@@ -317,14 +368,154 @@ daq_api_gh_version_list() {
 }
 
 # ------------------------------------------------------------------------------
+# Asset functions
+# ------------------------------------------------------------------------------
+
+# List all assets for a specific version
+daq_api_gh_assets_list() {
+    local version="${1:-}"
+    
+    if [[ -z "$version" ]]; then
+        __daq_api_gh_error "Version not specified for assets list"
+        return 1
+    fi
+    
+    local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases/tags/${version}"
+    local temp_file="/tmp/gh_response_$$"
+    
+    __daq_api_gh_info "Listing assets for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO} version $version"
+    
+    # Get release data
+    if ! daq_api_gh_request "$endpoint" > "$temp_file"; then
+        rm -f "$temp_file"
+        __daq_api_gh_error "Failed to get release data for version $version"
+        return 1
+    fi
+    
+    # Extract asset names
+    local assets
+    assets=$(jq -r '.assets[]? | .name // empty' < "$temp_file" 2>/dev/null)
+    local exit_code=$?
+    rm -f "$temp_file"
+    
+    if [[ -z "$assets" ]]; then
+        __daq_api_gh_debug "No assets found for version $version"
+        return 1
+    fi
+    
+    echo "$assets"
+    return $exit_code
+}
+
+# Filter assets by pattern
+daq_api_gh_assets_filter() {
+    local version="${1:-}"
+    local pattern="${2:-}"
+    
+    if [[ -z "$version" ]]; then
+        __daq_api_gh_error "Version not specified for assets filter"
+        return 1
+    fi
+    
+    if [[ -z "$pattern" ]]; then
+        __daq_api_gh_error "Pattern not specified for assets filter"
+        return 1
+    fi
+    
+    local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases/tags/${version}"
+    local temp_file="/tmp/gh_response_$$"
+    
+    __daq_api_gh_info "Filtering assets for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO} version $version with pattern: $pattern"
+    
+    # Get release data
+    if ! daq_api_gh_request "$endpoint" > "$temp_file"; then
+        rm -f "$temp_file"
+        __daq_api_gh_error "Failed to get release data for version $version"
+        return 1
+    fi
+    
+    # Convert glob pattern to regex for jq
+    # Simple conversion: * -> .*, ? -> .
+    local jq_pattern
+    jq_pattern=$(echo "$pattern" | sed 's/\*/\.\*/g' | sed 's/?/\./g')
+    
+    # Filter asset names using jq with regex
+    local filtered_assets
+    filtered_assets=$(jq -r --arg pattern "$jq_pattern" '.assets[]? | select(.name | test($pattern)) | .name' < "$temp_file" 2>/dev/null)
+    local exit_code=$?
+    rm -f "$temp_file"
+    
+    if [[ -z "$filtered_assets" ]]; then
+        __daq_api_gh_debug "No assets matching pattern '$pattern' for version $version"
+        return 1
+    fi
+    
+    echo "$filtered_assets"
+    return $exit_code
+}
+
+# Get download URLs for assets
+daq_api_gh_assets_urls() {
+    local version="${1:-}"
+    local pattern="${2:-}"
+    
+    if [[ -z "$version" ]]; then
+        __daq_api_gh_error "Version not specified for assets URLs"
+        return 1
+    fi
+    
+    local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases/tags/${version}"
+    local temp_file="/tmp/gh_response_$$"
+    
+    __daq_api_gh_info "Getting asset URLs for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO} version $version"
+    
+    # Get release data
+    if ! daq_api_gh_request "$endpoint" > "$temp_file"; then
+        rm -f "$temp_file"
+        __daq_api_gh_error "Failed to get release data for version $version"
+        return 1
+    fi
+    
+    # Build jq query based on pattern
+    local jq_query
+    if [[ -n "$pattern" ]]; then
+        # Convert glob pattern to regex
+        local jq_pattern
+        jq_pattern=$(echo "$pattern" | sed 's/\*/\.\*/g' | sed 's/?/\./g')
+        jq_query=".assets[]? | select(.name | test(\"$jq_pattern\")) | .browser_download_url"
+    else
+        jq_query='.assets[]? | .browser_download_url'
+    fi
+    
+    # Extract URLs
+    local urls
+    urls=$(jq -r "$jq_query" < "$temp_file" 2>/dev/null)
+    local exit_code=$?
+    rm -f "$temp_file"
+    
+    if [[ -z "$urls" ]]; then
+        if [[ -n "$pattern" ]]; then
+            __daq_api_gh_debug "No assets matching pattern '$pattern' for version $version"
+        else
+            __daq_api_gh_debug "No assets found for version $version"
+        fi
+        return 1
+    fi
+    
+    echo "$urls"
+    return $exit_code
+}
+
+# ------------------------------------------------------------------------------
 # Main function
 # ------------------------------------------------------------------------------
 
 __daq_api_gh_main() {
-    local repo=""
-    local action="version"  # default action
+    local repo=${OPENDAQ_GH_API_GITHUB_REPO}
+    local action=""
+    local limit="30"
     
-    # Parse arguments (POSIX-style для совместимости)
+    # Parse arguments (POSIX-style for compatibility)
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --version)
@@ -332,6 +523,7 @@ __daq_api_gh_main() {
                     __daq_api_gh_error "Option --version requires an argument"
                     return 1
                 fi
+                action="version"
                 __DAQ_GH_API_VERSION="$2"
                 shift 2
                 ;;
@@ -339,27 +531,32 @@ __daq_api_gh_main() {
                 action="list-versions"
                 shift
                 ;;
+            --list-assets)
+                action="list-assets"
+                shift
+                ;;
+            --pattern)
+                if [[ $# -lt 2 ]]; then
+                    __daq_api_gh_error "Option --pattern requires an argument"
+                    return 1
+                fi
+                __DAQ_GH_API_PATTERN="$2"
+                shift 2
+                ;;
+            --limit)
+                if [[ $# -lt 2 ]]; then
+                    __daq_api_gh_error "Option --limit requires an argument"
+                    return 1
+                fi
+                limit="$2"
+                shift 2
+                ;;
             --verbose)
                 __DAQ_GH_API_VERBOSE=1
                 shift
                 ;;
             --help|-h)
-                cat <<EOF
-Usage: api-github-gh OWNER/REPO [OPTIONS]
-
-OPTIONS:
-    --version VERSION    Check specific version (default: latest)
-    --list-versions      List all available versions
-    --verbose           Enable verbose output
-    --help              Show this help
-
-EXAMPLES:
-    api-github-gh cli/cli                    # Get latest version
-    api-github-gh cli/cli --version v2.45.0  # Verify specific version
-    api-github-gh cli/cli --list-versions    # List all versions
-
-Shell: ${__DAQ_GH_API_SHELL} ${__DAQ_GH_API_SHELL_VERSION}
-EOF
+                __daq_api_gh_help
                 return 0
                 ;;
             --*)
@@ -380,6 +577,7 @@ EOF
     
     if [[ -z "$repo" ]]; then
         __daq_api_gh_error "Repository not specified"
+        __daq_api_gh_help
         return 1
     fi
     
@@ -394,7 +592,25 @@ EOF
             daq_api_gh_version_resolve "$__DAQ_GH_API_VERSION"
             ;;
         list-versions)
-            daq_api_gh_version_list
+            daq_api_gh_version_list "$limit"
+            ;;
+        list-assets)
+            # Resolve version if needed
+            __DAQ_GH_API_VERSION="${__DAQ_GH_API_VERSION:-latest}"
+            if [[ "$__DAQ_GH_API_VERSION" == "latest" ]]; then
+                __DAQ_GH_API_VERSION=$(daq_api_gh_version_latest) || return 1
+            fi
+            
+            # List or filter assets
+            if [[ -n "$__DAQ_GH_API_PATTERN" ]]; then
+                daq_api_gh_assets_filter "$__DAQ_GH_API_VERSION" "$__DAQ_GH_API_PATTERN"
+            else
+                daq_api_gh_assets_list "$__DAQ_GH_API_VERSION"
+            fi
+            ;;
+        *)
+            __daq_api_gh_error "Action not specified"
+            __daq_api_gh_help
             ;;
     esac
 }
