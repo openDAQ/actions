@@ -1098,7 +1098,6 @@ __daq_api_gh_main() {
 # ------------------------------------------------------------------------------
 
 if [[ "${__DAQ_GH_API_SOURCED}" -eq 0 ]]; then
-    echo "SOURCED -> ${__DAQ_GH_API_SOURCED}"
     __daq_api_gh_main "$@"
     exit $?
 fi
