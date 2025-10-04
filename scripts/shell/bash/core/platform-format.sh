@@ -1,10 +1,18 @@
 #!/usr/bin/env bash
 #
 # platform-format.sh - Platform alias parser and validator
+# 
+# A lightweight shell script for parsing, validating, and composing platform
+# aliases in the format {os}{version}-{arch} (Linux/macOS) or win{arch} (Windows).
+#
 # Compatible with bash 3.2+ and zsh
 #
-# Usage:
-#   ./platform-format.sh [OPTIONS] <command> [arguments]
+# =============================================================================
+# USAGE AS CLI TOOL
+# =============================================================================
+#
+# Synopsis:
+#   platform-format.sh [OPTIONS] <command> [arguments]
 #
 # Global Options (can be placed anywhere in command line):
 #   --verbose, -v       Enable verbose output
@@ -13,50 +21,142 @@
 #
 # Commands:
 #   validate <platform> [flags]
+#     Validate a platform alias and optionally check its type
+#     Flags: --is-unix, --is-linux, --is-ubuntu, --is-debian, --is-macos, --is-win
+#     Exit code: 0 if valid/true, 1 if invalid/false
+#
 #   parse|extract <platform> [flags]
-#   compose --os-name <n> --os-version <ver> --os-arch <arch>
+#     Parse platform into components
+#     Flags: --os-name, --os-version, --os-arch
+#     Output: Space-separated components to stdout
+#
+#   compose --os-name <n> [--os-version <v>] --os-arch <a>
+#     Compose platform alias from components
+#     Output: Platform alias to stdout
+#
 #   --list-platforms
+#     List all supported platforms
+#     Output: One platform per line to stdout
 #
-# Examples:
-#   ./platform-format.sh --verbose validate ubuntu20.04-arm64 --is-linux
-#   ./platform-format.sh validate --debug ubuntu20.04-arm64
-#   ./platform-format.sh --quiet parse invalid-platform
+# =============================================================================
+# USAGE AS LIBRARY
+# =============================================================================
 #
-# Can also be sourced to use functions directly:
+# Source the script to use functions in your own scripts:
+#
 #   source platform-format.sh
-#   daq_platform_validate ubuntu20.04-arm64 --is-linux
+#   
+#   # Use public functions (prefix: daq_platform_*)
+#   daq_platform_validate "ubuntu20.04-arm64" --is-linux
+#   result=$(daq_platform_parse "macos14-arm64" --os-version)
+#   platform=$(daq_platform_compose --os-name debian --os-version 11 --os-arch arm64)
+#   daq_platform_list
+#
+# =============================================================================
+# EXAMPLES
+# =============================================================================
+#
+# Validate platforms:
+#   ./platform-format.sh validate ubuntu20.04-arm64
+#   ./platform-format.sh validate ubuntu20.04-arm64 --is-linux
+#
+# Parse platform components:
+#   ./platform-format.sh parse ubuntu20.04-arm64
+#   # Output: ubuntu 20.04 arm64
+#   
+#   ./platform-format.sh parse win64 --os-name
+#   # Output: win
+#
+# Compose platforms:
+#   ./platform-format.sh compose --os-name ubuntu --os-version 20.04 --os-arch arm64
+#   # Output: ubuntu20.04-arm64
+#
+# With global flags:
+#   ./platform-format.sh --verbose validate ubuntu20.04-arm64
+#   ./platform-format.sh --debug parse macos14-arm64
+#
+# =============================================================================
 
 # Compatible with bash 3.2+ and zsh
-set -eu
+set -u
 if [ -n "${BASH_VERSION:-}" ]; then
     set -o pipefail
 fi
 
-# Supported platforms
+# =============================================================================
+# Configuration: Supported Platforms
+# =============================================================================
+# These arrays define all supported platform versions and architectures.
+# Add new versions here to extend platform support.
+
+# Supported Ubuntu versions
 __DAQ_PLATFORM_UBUNTU_VERSIONS=("20.04" "22.04" "24.04")
+
+# Supported Debian versions
 __DAQ_PLATFORM_DEBIAN_VERSIONS=("8" "9" "10" "11" "12")
+
+# Supported macOS versions
 __DAQ_PLATFORM_MACOS_VERSIONS=("13" "14" "15" "16" "17" "18" "26")
+
+# Supported Windows architectures (32-bit, 64-bit)
 __DAQ_PLATFORM_WIN_ARCHS=("32" "64")
+
+# Supported Linux/macOS architectures
 __DAQ_PLATFORM_LINUX_ARCHS=("arm64" "x86_64")
 
-# Global flags
+# =============================================================================
+# Global Runtime Flags
+# =============================================================================
+# These flags control output behavior and can be set via command-line options
+# or when sourcing the script as a library.
+
+# Enable verbose output (0=off, 1=on)
+# Set via --verbose or -v flag
 __DAQ_PLATFORM_VERBOSE=0
+
+# Enable debug output (0=off, 1=on)
+# Set via --debug or -d flag
 __DAQ_PLATFORM_DEBUG=0
+
+# Enable quiet mode - suppress error messages (0=off, 1=on)
+# Set via --quiet or -q flag
 __DAQ_PLATFORM_QUIET=0
 
 # Helper functions for output
+# ==========================
+
+# Print verbose message to stderr
+# Arguments:
+#   $@ - Message to print
+# Output:
+#   Prints "[VERBOSE] <message>" to stderr if verbose mode is enabled
+# Exit code: 0
 __daq_platform_verbose() {
     if [ "$__DAQ_PLATFORM_VERBOSE" -eq 1 ]; then
         echo "[VERBOSE] $*" >&2
     fi
 }
 
+# Print debug message to stderr
+# Arguments:
+#   $@ - Message to print
+# Output:
+#   Prints "[DEBUG] <message>" to stderr if debug mode is enabled
+# Exit code: 0
 __daq_platform_debug() {
     if [ "$__DAQ_PLATFORM_DEBUG" -eq 1 ]; then
         echo "[DEBUG] $*" >&2
     fi
 }
 
+# Print error message to stderr with optional details
+# Arguments:
+#   $1 - Error message
+#   $@ - Optional additional details (shown only in verbose mode)
+# Output:
+#   Prints "Error: <message>" to stderr unless quiet mode is enabled
+#   In verbose mode, also prints "  Details: <details>" if provided
+# Exit code: 0
 __daq_platform_error() {
     if [ "$__DAQ_PLATFORM_QUIET" -eq 0 ]; then
         echo "Error: $1" >&2
@@ -67,7 +167,21 @@ __daq_platform_error() {
     fi
 }
 
-# Generate list of all supported platforms
+# Platform Management Functions
+# ==============================
+
+# Generate list of all supported platform aliases
+# Arguments: None
+# Output:
+#   Prints one platform alias per line to stdout
+#   Format: {os}{version}-{arch} (Linux/macOS) or win{arch} (Windows)
+#   Example output:
+#     ubuntu20.04-arm64
+#     ubuntu20.04-x86_64
+#     debian11-arm64
+#     macos14-arm64
+#     win64
+# Exit code: 0
 __daq_platform_generate_platforms() {
     local platforms=()
     
@@ -103,7 +217,13 @@ __daq_platform_generate_platforms() {
     printf '%s\n' "${platforms[@]}"
 }
 
-# Check if platform is valid
+# Check if a platform alias is valid
+# Arguments:
+#   $1 - Platform alias to validate
+# Output: None
+# Exit code:
+#   0 - Platform is valid
+#   1 - Platform is invalid
 __daq_platform_is_valid() {
     local platform="$1"
     local valid_platforms
@@ -120,7 +240,18 @@ __daq_platform_is_valid() {
     fi
 }
 
-# Parse platform alias into components
+# Parse platform alias into its components (internal implementation)
+# Arguments:
+#   $1 - Platform alias (e.g., ubuntu20.04-arm64, win64)
+# Output:
+#   For Linux/macOS: Prints "os_name os_version os_arch" to stdout
+#   For Windows: Prints "os_name os_arch" to stdout (no version)
+#   Example:
+#     ubuntu20.04-arm64 → "ubuntu 20.04 arm64"
+#     win64 → "win 64"
+# Exit code:
+#   0 - Successfully parsed
+#   1 - Invalid platform or parsing error
 __daq_platform_parse() {
     local platform="$1"
     
@@ -177,7 +308,27 @@ __daq_platform_parse() {
     echo "$os_name" "$os_version" "$os_arch"
 }
 
-# Public: Validate platform
+# Public API Functions
+# ====================
+
+# Validate a platform alias and optionally check its type
+# Arguments:
+#   $1 - Platform alias to validate (e.g., ubuntu20.04-arm64)
+#   $2 - Optional type check flag:
+#        --is-unix    Check if platform is Unix-based (Ubuntu/Debian/macOS)
+#        --is-linux   Check if platform is Linux (Ubuntu/Debian)
+#        --is-ubuntu  Check if platform is Ubuntu
+#        --is-debian  Check if platform is Debian
+#        --is-macos   Check if platform is macOS
+#        --is-win     Check if platform is Windows
+# Output: None (uses exit codes only)
+# Exit code:
+#   0 - Platform is valid (or type check passed)
+#   1 - Platform is invalid (or type check failed)
+# Examples:
+#   daq_platform_validate ubuntu20.04-arm64              # Returns 0
+#   daq_platform_validate ubuntu20.04-arm64 --is-linux  # Returns 0
+#   daq_platform_validate ubuntu20.04-arm64 --is-macos  # Returns 1
 daq_platform_validate() {
     local platform="$1"
     shift
@@ -261,7 +412,29 @@ daq_platform_validate() {
     esac
 }
 
-# Public: Parse/Extract platform components
+# Parse/extract platform components from a platform alias
+# Arguments:
+#   $1 - Platform alias (e.g., ubuntu20.04-arm64, win64)
+#   $2+ - Optional component flags:
+#         --os-name     Extract only OS name
+#         --os-version  Extract only OS version
+#         --os-arch     Extract only OS architecture
+#         (multiple flags can be combined)
+# Output:
+#   Without flags: Prints all components separated by spaces
+#     For Linux/macOS: "os_name os_version os_arch"
+#     For Windows: "os_name os_arch" (no version)
+#   With flags: Prints only requested components separated by spaces
+# Exit code:
+#   0 - Successfully parsed
+#   1 - Invalid platform or error
+# Examples:
+#   daq_platform_parse ubuntu20.04-arm64
+#     Output: ubuntu 20.04 arm64
+#   daq_platform_parse ubuntu20.04-arm64 --os-name
+#     Output: ubuntu
+#   daq_platform_parse win64 --os-name --os-arch
+#     Output: win 64
 daq_platform_parse() {
     local platform="$1"
     shift
@@ -326,13 +499,29 @@ daq_platform_parse() {
     fi
 }
 
-# Public: Alias for parse
+# Alias for daq_platform_parse
+# See daq_platform_parse documentation for details
 daq_platform_extract() {
     __daq_platform_debug "Extract command (alias for parse)"
     daq_platform_parse "$@"
 }
 
-# Public: Compose platform from components
+# Compose a platform alias from individual components
+# Arguments:
+#   --os-name <name>      OS name (ubuntu, debian, macos, win) [REQUIRED]
+#   --os-version <ver>    OS version (required for ubuntu/debian/macos, not used for win)
+#   --os-arch <arch>      Architecture (arm64, x86_64 for Linux/macOS; 32, 64 for Windows) [REQUIRED]
+# Output:
+#   Prints composed platform alias to stdout
+#   Format: {os}{version}-{arch} for Linux/macOS, win{arch} for Windows
+# Exit code:
+#   0 - Successfully composed valid platform
+#   1 - Missing required arguments or invalid composition
+# Examples:
+#   daq_platform_compose --os-name ubuntu --os-version 20.04 --os-arch arm64
+#     Output: ubuntu20.04-arm64
+#   daq_platform_compose --os-name win --os-arch 64
+#     Output: win64
 daq_platform_compose() {
     local os_name=""
     local os_version=""
@@ -411,13 +600,53 @@ daq_platform_compose() {
     echo "$platform"
 }
 
-# Public: List all platforms
+# List all supported platform aliases
+# Arguments: None
+# Output:
+#   Prints all supported platform aliases, one per line, to stdout
+# Exit code: 0
+# Example:
+#   daq_platform_list
+#     Output:
+#       ubuntu20.04-arm64
+#       ubuntu20.04-x86_64
+#       debian11-arm64
+#       ...
 daq_platform_list() {
     __daq_platform_verbose "Listing all supported platforms"
     __daq_platform_generate_platforms
 }
 
 # Main CLI entry point
+# Processes command-line arguments in two passes:
+#   1. Extract and process global flags (--verbose, --debug, --quiet)
+#   2. Route to appropriate command handler with remaining arguments
+# 
+# Arguments:
+#   Global flags (can appear anywhere):
+#     --verbose, -v   Enable verbose output
+#     --debug, -d     Enable debug output
+#     --quiet, -q     Suppress error messages
+#   
+#   Commands:
+#     validate <platform> [--is-*]
+#     parse <platform> [--os-name] [--os-version] [--os-arch]
+#     extract <platform> [--os-name] [--os-version] [--os-arch]
+#     compose --os-name <n> [--os-version <v>] --os-arch <a>
+#     --list-platforms
+# 
+# Output:
+#   Usage information if no arguments provided
+#   Otherwise delegates to appropriate command function
+# 
+# Exit code:
+#   0 - Success
+#   1 - Error (invalid command, missing arguments, etc.)
+# 
+# Examples:
+#   __daq_platform_main validate ubuntu20.04-arm64
+#   __daq_platform_main --verbose parse macos14-arm64
+#   __daq_platform_main --debug compose --os-name debian --os-version 11 --os-arch arm64
 __daq_platform_main() {
     # FIRST PASS: Extract global flags
     local remaining_args=()
@@ -500,14 +729,25 @@ __daq_platform_main() {
     esac
 }
 
-# Detect if script is being sourced
+# =============================================================================
+# Script Execution Control
+# =============================================================================
+# Detect if script is being sourced or executed directly.
+# If sourced, only define functions without running main().
+# If executed, run main() with command-line arguments.
+
+# Flag to track if script was sourced (0=executed, 1=sourced)
 __DAQ_PLATFORM_SOURCED=0
+
 if [ -n "${BASH_VERSION:-}" ]; then
+    # Bash: Compare script path with invocation path
+    # BASH_SOURCE[0] = script path, $0 = invocation path
     if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
         __DAQ_PLATFORM_SOURCED=1
     fi
 elif [ -n "${ZSH_VERSION:-}" ]; then
-    # Use zsh-specific variable, suppress any output
+    # Zsh: Use prompt expansion to get script name
+    # %N expands to script/function name
     __DAQ_PLATFORM_SCRIPT_PATH="${(%):-%N}"
     if [ "$__DAQ_PLATFORM_SCRIPT_PATH" != "${0}" ]; then
         __DAQ_PLATFORM_SOURCED=1
@@ -515,6 +755,9 @@ elif [ -n "${ZSH_VERSION:-}" ]; then
 fi
 
 # Run main only if not sourced
+# This allows the script to be used both as:
+#   1. CLI tool: ./platform-format.sh validate ubuntu20.04-arm64
+#   2. Library: source platform-format.sh && daq_platform_validate ubuntu20.04-arm64
 if [ "$__DAQ_PLATFORM_SOURCED" -eq 0 ]; then
     __daq_platform_main "$@"
 fi
