@@ -20,6 +20,11 @@
 #   --quiet, -q         Suppress error messages
 #
 # Commands:
+#   detect
+#     Detect current platform automatically
+#     Output: Platform alias to stdout (e.g., ubuntu20.04-arm64)
+#     Exit code: 0 if detected and supported, 1 if unsupported or detection failed
+#
 #   validate <platform> [flags]
 #     Validate a platform alias and optionally check its type
 #     Flags: --is-unix, --is-linux, --is-ubuntu, --is-debian, --is-macos, --is-win
@@ -55,6 +60,17 @@
 # =============================================================================
 # EXAMPLES
 # =============================================================================
+#
+# Detect current platform:
+#   ./platform-format.sh detect
+#   # Output: ubuntu20.04-arm64
+#
+#   ./platform-format.sh --verbose detect
+#   # [VERBOSE] Detected OS: ubuntu
+#   # [VERBOSE] Detected version: 20.04
+#   # [VERBOSE] Detected architecture: arm64
+#   # [VERBOSE] Composed platform: ubuntu20.04-arm64
+#   # ubuntu20.04-arm64
 #
 # Validate platforms:
 #   ./platform-format.sh validate ubuntu20.04-arm64
@@ -169,6 +185,130 @@ __daq_platform_error() {
 
 # Platform Management Functions
 # ==============================
+
+# Detect current operating system name and version
+# Arguments: None
+# Output:
+#   Prints "os_name os_version" to stdout
+#   For Windows: prints "win" (no version)
+# Exit code:
+#   0 - Successfully detected
+#   1 - Unable to detect OS
+# Examples:
+#   On Ubuntu 20.04: "ubuntu 20.04"
+#   On macOS 14.x: "macos 14"
+#   On Windows: "win"
+__daq_platform_detect_os_info() {
+    local os_name=""
+    local os_version=""
+    
+    # Detect OS type
+    local uname_s
+    uname_s=$(uname -s)
+    
+    __daq_platform_debug "uname -s: $uname_s"
+    
+    case "$uname_s" in
+        Linux)
+            # Linux: read /etc/os-release
+            if [ -f /etc/os-release ]; then
+                # Source the file to get ID and VERSION_ID
+                . /etc/os-release
+                os_name="$ID"
+                os_version="$VERSION_ID"
+                __daq_platform_debug "Detected Linux: ID=$ID VERSION_ID=$VERSION_ID"
+            else
+                __daq_platform_error "Cannot detect Linux distribution: /etc/os-release not found"
+                return 1
+            fi
+            ;;
+        Darwin)
+            # macOS: use sw_vers
+            os_name="macos"
+            # Get version like 14.2.1, extract major version (14)
+            local full_version
+            full_version=$(sw_vers -productVersion 2>/dev/null)
+            if [ -z "$full_version" ]; then
+                __daq_platform_error "Cannot detect macOS version"
+                return 1
+            fi
+            os_version=$(echo "$full_version" | cut -d. -f1)
+            __daq_platform_debug "Detected macOS: version=$full_version (major=$os_version)"
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            # Windows (Git Bash, MSYS2, Cygwin)
+            os_name="win"
+            os_version=""
+            __daq_platform_debug "Detected Windows environment: $uname_s"
+            ;;
+        *)
+            __daq_platform_error "Unsupported operating system: $uname_s"
+            return 1
+            ;;
+    esac
+    
+    echo "$os_name" "$os_version"
+}
+
+# Detect and normalize current system architecture
+# Arguments: None
+# Output:
+#   Prints normalized architecture to stdout
+#   For Linux/macOS: arm64 or x86_64
+#   For Windows: 32 or 64
+# Exit code:
+#   0 - Successfully detected
+#   1 - Unable to detect architecture
+# Examples:
+#   aarch64 → arm64
+#   x86_64 → x86_64
+#   i686 → 32 (on Windows)
+__daq_platform_detect_arch() {
+    local uname_m
+    uname_m=$(uname -m)
+    
+    __daq_platform_debug "uname -m: $uname_m"
+    
+    # Check if we're on Windows first
+    local uname_s
+    uname_s=$(uname -s)
+    local is_windows=0
+    case "$uname_s" in
+        MINGW*|MSYS*|CYGWIN*)
+            is_windows=1
+            ;;
+    esac
+    
+    # Normalize architecture
+    case "$uname_m" in
+        x86_64|amd64)
+            if [ $is_windows -eq 1 ]; then
+                echo "64"
+            else
+                echo "x86_64"
+            fi
+            ;;
+        aarch64|arm64)
+            if [ $is_windows -eq 1 ]; then
+                echo "64"
+            else
+                echo "arm64"
+            fi
+            ;;
+        i686|i386|x86)
+            if [ $is_windows -eq 1 ]; then
+                echo "32"
+            else
+                __daq_platform_error "32-bit Linux/macOS is not supported"
+                return 1
+            fi
+            ;;
+        *)
+            __daq_platform_error "Unsupported architecture: $uname_m"
+            return 1
+            ;;
+    esac
+}
 
 # Generate list of all supported platform aliases
 # Arguments: None
@@ -617,6 +757,78 @@ daq_platform_list() {
     __daq_platform_generate_platforms
 }
 
+# Detect current platform and return its alias
+# Arguments: None
+# Output:
+#   Prints detected platform alias to stdout (e.g., ubuntu20.04-arm64)
+#   In verbose mode, also prints detection details to stderr
+# Exit code:
+#   0 - Successfully detected a supported platform
+#   1 - Detection failed or platform is not supported
+# Examples:
+#   daq_platform_detect
+#     Output: ubuntu20.04-arm64
+#   
+#   daq_platform_detect (with --verbose)
+#     [VERBOSE] Detected OS: ubuntu
+#     [VERBOSE] Detected version: 20.04
+#     [VERBOSE] Detected architecture: arm64
+#     [VERBOSE] Composed platform: ubuntu20.04-arm64
+#     ubuntu20.04-arm64
+#   
+#   On unsupported platform:
+#     Error: Detected platform ubuntu18.04-arm64 is not supported
+#     exit 1
+daq_platform_detect() {
+    __daq_platform_debug "Detect command invoked"
+    
+    # Detect OS info
+    local os_info
+    if ! os_info=$(__daq_platform_detect_os_info); then
+        exit 1
+    fi
+    
+    local os_name os_version
+    read -r os_name os_version <<< "$os_info"
+    
+    __daq_platform_verbose "Detected OS: $os_name"
+    if [ -n "$os_version" ]; then
+        __daq_platform_verbose "Detected version: $os_version"
+    fi
+    
+    # Detect architecture
+    local os_arch
+    if ! os_arch=$(__daq_platform_detect_arch); then
+        exit 1
+    fi
+    
+    __daq_platform_verbose "Detected architecture: $os_arch"
+    
+    # Compose platform alias
+    local platform=""
+    if [ "$os_name" = "win" ]; then
+        platform="win${os_arch}"
+    else
+        if [ -z "$os_version" ]; then
+            __daq_platform_error "Could not detect OS version for $os_name"
+            exit 1
+        fi
+        platform="${os_name}${os_version}-${os_arch}"
+    fi
+    
+    __daq_platform_verbose "Composed platform: $platform"
+    
+    # Validate that detected platform is supported
+    if ! __daq_platform_is_valid "$platform"; then
+        __daq_platform_error "Detected platform $platform is not supported" \
+            "Supported platforms can be listed with: --list-platforms"
+        exit 1
+    fi
+    
+    __daq_platform_verbose "Platform is supported: $platform"
+    echo "$platform"
+}
+
 # Main CLI entry point
 # Processes command-line arguments in two passes:
 #   1. Extract and process global flags (--verbose, --debug, --quiet)
@@ -629,6 +841,7 @@ daq_platform_list() {
 #     --quiet, -q     Suppress error messages
 #   
 #   Commands:
+#     detect
 #     validate <platform> [--is-*]
 #     parse <platform> [--os-name] [--os-version] [--os-arch]
 #     extract <platform> [--os-name] [--os-version] [--os-arch]
@@ -644,6 +857,7 @@ daq_platform_list() {
 #   1 - Error (invalid command, missing arguments, etc.)
 # 
 # Examples:
+#   __daq_platform_main detect
 #   __daq_platform_main validate ubuntu20.04-arm64
 #   __daq_platform_main --verbose parse macos14-arm64
 #   __daq_platform_main --debug compose --os-name debian --os-version 11 --os-arch arm64
@@ -688,6 +902,7 @@ __daq_platform_main() {
             echo "  --quiet, -q         Suppress error messages"
             echo ""
             echo "Commands:"
+            echo "  detect              Detect current platform"
             echo "  validate <platform> [--is-unix|--is-linux|--is-ubuntu|--is-debian|--is-macos|--is-win]"
             echo "  parse <platform> [--os-name] [--os-version] [--os-arch]"
             echo "  extract <platform> [--os-name] [--os-version] [--os-arch]"
@@ -705,6 +920,10 @@ __daq_platform_main() {
         --list-platforms)
             __daq_platform_verbose "Listing all supported platforms"
             daq_platform_list
+            ;;
+        detect)
+            shift
+            daq_platform_detect "$@"
             ;;
         validate)
             shift
