@@ -1022,6 +1022,10 @@ __daq_api_gh_main() {
     if [[ "$__DAQ_GH_API_VERSION" == "latest" ]]; then
         __DAQ_GH_API_VERSION=$(daq_api_gh_version_latest)
     fi
+
+    if [[ -z "$action" ]]; then
+        action="version"
+    fi
     
     # Execute action
     case "$action" in

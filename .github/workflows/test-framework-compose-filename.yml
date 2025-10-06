@@ -1,0 +1,99 @@
+name: "Call action: framework compose filename"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/test-framework-compose-filename.yml'
+      - './framework-compose-filename/action.yml'
+      - './scripts/**'
+  pull_request:
+    paths:
+      - '.github/workflows/test-framework-compose-filename.yml'
+      - './framework-compose-filename/action.yml'
+      - './scripts/**'
+
+jobs:
+  test-auto-detection:
+    name: Test Auto-Detection on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - ubuntu-22.04
+          - ubuntu-24.04
+          - ubuntu-22.04-arm
+          - ubuntu-24.04-arm
+          - macos-13
+          - macos-15-intel
+          - macos-14
+          - macos-15
+          - macos-26
+          - windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test auto-detection (no inputs)
+        id: test-auto-detect
+        uses: ./framework-compose-filename
+
+      - name: Test auto-detection (no inputs) results
+        id: test-auto-detect-results
+        shell: bash
+        env:
+          TEST_CURRENT_OS: ${{ matrix.os }}
+          ACTUAL_FILENAME: ${{ steps.test-auto-detect.outputs.filename }}
+        run: |
+          platform=
+          version=$(gh release list --repo openDAQ/openDAQ --json tagName,isLatest -q '.[] | select(.isLatest == true) | .tagName')
+          case "$TEST_TEST_CURRENT_OS" in 
+            ubuntu-22.04)
+              platform="ubuntu22.04-x86_64"
+              ;;
+            ubuntu-24.04)
+              platform="ubuntu24.04-x86_64"
+              ;;
+            ubuntu-22.04-arm)
+              platform="ubuntu24.04-arm64"
+              ;;
+            ubuntu-22.04-arm)
+              platform="ubuntu24.04-arm64"
+              ;;
+            ubuntu-24.04-arm)
+              platform="ubuntu24.04-arm64"
+              ;;
+            macos-13)
+              platform="macos13-x86_64"
+              ;;
+            macos-15-intel)
+              platform="macos15-x86_64"
+              ;;
+            macos-14)
+              platform="macos14-arm64"
+              ;;
+            macos-15)
+              platform="macos15-arm64"
+              ;;
+            macos-26)
+              platform="macos26-arm64"
+              ;;
+            *)
+              echo "Unsupported OS: $TEST_TEST_CURRENT_OS" >&2
+              exit 1
+          esac
+          filename="opendaq-$version-$platform.*"
+          case "$ACTUAL_FILENAME" in
+            filename)
+              echo "Success"
+              ;;
+            *)
+              echo "OpenDAQ framework filename mismatches: expected ${filename}, but got ${ACTUAL_FILENAME}" >&2
+              exit 1
+              
+            
+
+
