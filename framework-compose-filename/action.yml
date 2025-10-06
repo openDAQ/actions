@@ -210,7 +210,7 @@ runs:
       env:
         OPENDAQ_ACTIONS_SCRIPS_DIR: ${{ steps.shell-scripts.outputs.dir }}
         OPENDAQ_FRAMEWORK_PACKAGING: ${{ inputs.packaging }}
-        OPENDAQ_RUNNER_OS: ${{ runner.os }}
+        OPENDAQ_RUNNER_OS: ${{ steps.resolve-platform.outputs.platform }}
       run: |        
         if [ -n "$OPENDAQ_FRAMEWORK_PACKAGING" ]; then
           echo "🧭 Using provided packaging format (cpack generator): $OPENDAQ_FRAMEWORK_PACKAGING"
