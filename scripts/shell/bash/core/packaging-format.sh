@@ -71,7 +71,7 @@ __daq_packaging_normalize_os_name() {
     # Match common patterns
     if [[ "${os_name}" =~ ^windows.*$ ]] || [[ "${os_name}" =~ ^win.*$ ]]; then
         echo "windows"
-    elif [[ "${os_name}" =~ ^ubuntu.*$ ]] || [[ "${os_name}" =~ ^linux.*$ ]]; then
+    elif [[ "${os_name}" =~ ^ubuntu.*$ ]] || [[ "${os_name}" =~ ^linux.*$ ]] || [[ "${os_name}" =~ ^debian.*$ ]]; then
         echo "linux"
     elif [[ "${os_name}" =~ ^macos.*$ ]] || [[ "${os_name}" =~ ^mac.*$ ]] || [[ "${os_name}" =~ ^osx.*$ ]]; then
         echo "macos"

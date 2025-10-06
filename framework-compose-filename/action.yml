@@ -142,19 +142,8 @@ runs:
         OPENDAQ_GH_API_CACHE_DIR: ${{ steps.shell-scripts.outputs.tmp }}
         OPENDAQ_ACTIONS_SCRIPS_DIR: ${{ steps.shell-scripts.outputs.dir }}
         OPENDAQ_FRAMEWORK_VERSION: ${{ inputs.version }}
-      run: |        
-        if [ -n "$OPENDAQ_FRAMEWORK_VERSION" ]; then
-          echo "🧭 Validating provided version: $OPENDAQ_FRAMEWORK_VERSION"
-          
-          # Validate version using CLI
-          if "${OPENDAQ_ACTIONS_SCRIPS_DIR}/core/version-format.sh" validate "$OPENDAQ_FRAMEWORK_VERSION"; then
-            version="$OPENDAQ_FRAMEWORK_VERSION"
-            echo "✅ Version validated: $version"
-          else
-            echo "❌ Error: Invalid version format: $OPENDAQ_FRAMEWORK_VERSION" >&2
-            exit 1
-          fi
-        else
+      run: |
+        if [ -z "$OPENDAQ_FRAMEWORK_VERSION" ] || [ "$OPENDAQ_FRAMEWORK_VERSION" = "latest" ]; then
           echo "🔍 No version provided, resolving latest from openDAQ/openDAQ"
           
           # Get latest version using GitHub API CLI
@@ -166,6 +155,17 @@ runs:
           fi
           
           echo "✅ Resolved latest version: $version"
+        else
+          echo "🧭 Validating provided version: $OPENDAQ_FRAMEWORK_VERSION"
+          
+          # Validate version using CLI
+          if "${OPENDAQ_ACTIONS_SCRIPS_DIR}/core/version-format.sh" validate "$OPENDAQ_FRAMEWORK_VERSION"; then
+            version="$OPENDAQ_FRAMEWORK_VERSION"
+            echo "✅ Version validated: $version"
+          else
+            echo "❌ Error: Invalid version format: $OPENDAQ_FRAMEWORK_VERSION" >&2
+            exit 1
+          fi
         fi
         
         echo "version=$version" >> $GITHUB_OUTPUT
