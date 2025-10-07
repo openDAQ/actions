@@ -1,0 +1,210 @@
+name: Test Framework Download Artifact (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner to use for testing'
+        required: false
+        default: 'ubuntu-latest'
+        type: string
+      run-id:
+        description: 'Workflow run ID to download artifact from'
+        required: true
+        type: string
+      artifact-name:
+        description: 'Artifact name pattern'
+        required: true
+        type: string
+      artifact-filename:
+        description: 'File name to extract from artifact'
+        required: true
+        type: string
+      output-dir:
+        description: 'Output directory (leave empty for default)'
+        required: false
+        type: string
+      repository:
+        description: 'Repository (owner/repo format)'
+        required: false
+        default: 'openDAQ/openDAQ'
+        type: string
+      verbose:
+        description: 'Enable verbose output'
+        required: false
+        default: true
+        type: boolean
+      retry-attempts:
+        description: 'Number of retry attempts'
+        required: false
+        default: '3'
+        type: string
+      timeout-minutes:
+        description: 'Timeout in minutes'
+        required: false
+        default: '10'
+        type: string
+
+jobs:
+  test-download:
+    name: Test Download on ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner }}
+    
+    steps:
+      - name: Checkout Actions Repository
+        uses: actions/checkout@v4
+      
+      - name: Display Test Configuration
+        shell: bash
+        run: |
+          echo "=== Test Configuration ==="
+          echo "Runner: ${{ inputs.runner }}"
+          echo "Repository: ${{ inputs.repository }}"
+          echo "Run ID: ${{ inputs.run-id }}"
+          echo "Artifact Name: ${{ inputs.artifact-name }}"
+          echo "Artifact Filename: ${{ inputs.artifact-filename }}"
+          echo "Output Dir: ${{ inputs.output-dir || '(default)' }}"
+          echo "Verbose: ${{ inputs.verbose }}"
+          echo "Retry Attempts: ${{ inputs.retry-attempts }}"
+          echo "Timeout: ${{ inputs.timeout-minutes }} minutes"
+          echo ""
+          echo "=== Runner Information ==="
+          echo "OS: ${{ runner.os }}"
+          echo "Arch: ${{ runner.arch }}"
+          echo "Temp: ${{ runner.temp }}"
+      
+      - name: Download and Extract Artifact
+        id: download
+        uses: ./framework-download-artifact
+        with:
+          run-id: ${{ inputs.run-id }}
+          artifact-name: ${{ inputs.artifact-name }}
+          artifact-filename: ${{ inputs.artifact-filename }}
+          output-dir: ${{ inputs.output-dir }}
+          repository: ${{ inputs.repository }}
+          verbose: ${{ inputs.verbose }}
+          retry-attempts: ${{ inputs.retry-attempts }}
+          timeout-minutes: ${{ inputs.timeout-minutes }}
+      
+      - name: Verify Download Results
+        shell: bash
+        run: |
+          echo "=== Download Results ==="
+          echo "Artifact Path: ${{ steps.download.outputs.artifact-path }}"
+          echo "Artifact File Path: ${{ steps.download.outputs.artifact-file-path }}"
+          echo "Artifact Name: ${{ steps.download.outputs.artifact-name }}"
+          echo "Artifact Size: ${{ steps.download.outputs.artifact-size }} bytes"
+          echo ""
+          
+          # Verify artifact-path exists
+          if [ ! -e "${{ steps.download.outputs.artifact-path }}" ]; then
+            echo "::error::Artifact path does not exist: ${{ steps.download.outputs.artifact-path }}"
+            exit 1
+          fi
+          echo "✓ Artifact path exists"
+          
+          # Verify artifact-file-path exists
+          if [ ! -f "${{ steps.download.outputs.artifact-file-path }}" ]; then
+            echo "::error::Artifact file path does not exist: ${{ steps.download.outputs.artifact-file-path }}"
+            exit 1
+          fi
+          echo "✓ Artifact file path exists"
+          
+          # Check if it's a readable file
+          if [ ! -r "${{ steps.download.outputs.artifact-file-path }}" ]; then
+            echo "::error::Artifact file is not readable: ${{ steps.download.outputs.artifact-file-path }}"
+            exit 1
+          fi
+          echo "✓ Artifact file is readable"
+          
+          echo ""
+          echo "=== File Information ==="
+          ls -lh "${{ steps.download.outputs.artifact-file-path }}"
+          
+          # Try to detect file type
+          if command -v file &> /dev/null; then
+            echo ""
+            echo "File type:"
+            file "${{ steps.download.outputs.artifact-file-path }}"
+          fi
+      
+      - name: Display Artifact Structure
+        if: always()
+        shell: bash
+        run: |
+          echo "=== Artifact Directory Structure ==="
+          ARTIFACT_PATH="${{ steps.download.outputs.artifact-path }}"
+          
+          if [ -d "$ARTIFACT_PATH" ]; then
+            echo "Contents of: $ARTIFACT_PATH"
+            ls -lah "$ARTIFACT_PATH" || true
+            echo ""
+            
+            echo "Directory tree (max depth 3):"
+            if command -v tree &> /dev/null; then
+              tree -L 3 "$ARTIFACT_PATH" || true
+            else
+              find "$ARTIFACT_PATH" -maxdepth 3 -ls || true
+            fi
+          else
+            echo "Artifact path is not a directory"
+          fi
+      
+      - name: Test Summary
+        if: always()
+        shell: bash
+        run: |
+          echo "=== Test Summary ==="
+          
+          if [ -f "${{ steps.download.outputs.artifact-file-path }}" ]; then
+            echo "✅ Test PASSED"
+            echo "   - Artifact downloaded successfully"
+            echo "   - File extracted: ${{ steps.download.outputs.artifact-file-path }}"
+            echo "   - File size: ${{ steps.download.outputs.artifact-size }} bytes"
+            exit 0
+          else
+            echo "❌ Test FAILED"
+            echo "   - Expected file not found"
+            exit 1
+          fi
+      
+    #   - name: Upload Test Results
+    #     if: always()
+    #     uses: actions/upload-artifact@v4
+    #     with:
+    #       name: test-results-${{ inputs.runner }}
+    #       path: |
+    #         ${{ runner.temp }}/opendaq-gh-debug/
+    #       retention-days: 7
+  
+  test-summary:
+    name: Generate Test Summary
+    runs-on: ubuntu-latest
+    needs: test-download
+    if: always()
+    
+    steps:
+      - name: Create Summary
+        run: |
+          echo "# Test Results: Framework Download Artifact" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner**: \`${{ inputs.runner }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Repository**: \`${{ inputs.repository }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run ID**: \`${{ inputs.run-id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Name**: \`${{ inputs.artifact-name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Filename**: \`${{ inputs.artifact-filename }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## Test Status" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.test-download.result }}" = "success" ]; then
+            echo "✅ **Test PASSED**" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Test FAILED**" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## Details" >> $GITHUB_STEP_SUMMARY
+          echo "- Workflow Run: [View Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "- Test Job: [View Logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/job/${{ needs.test-download.outputs.job_id }})" >> $GITHUB_STEP_SUMMARY
