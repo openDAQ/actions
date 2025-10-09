@@ -234,6 +234,12 @@ runs:
           echo "✔ Artefact checksum: sha256:${checksum:-<unavailable>}"
         fi
         
+        # Normalize path for Windows (convert to Unix-style)
+        if command -v cygpath >/dev/null 2>&1; then
+          artifact="$(cygpath -w "$artifact")"
+          dir="$(cygpath -w "$dir")"
+        fi
+        
         # Store artifact name
         echo "artifact=$artifact" >> $GITHUB_OUTPUT
         echo "artifact-dir=$dir" >> $GITHUB_OUTPUT
