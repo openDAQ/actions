@@ -15,420 +15,228 @@ inputs:
   output-dir:
     description: 'Output directory for extracted artifact (default: runner temp)'
     required: false
-    default: ''
-  verbose:
-    description: 'Enable verbose output'
-    required: false
-    default: 'false'
-  repository:
-    description: 'Repository in format owner/repo (default: openDAQ/openDAQ)'
-    required: false
-    default: 'openDAQ/openDAQ'
   token:
     description: 'GitHub token (required for cross-repo access)'
     required: false
     default: ''
-  timeout-minutes:
-    description: 'Timeout for download operation'
-    required: false
-    default: '10'
   retry-attempts:
     description: 'Number of retry attempts on failure'
     required: false
     default: '3'
+  verbose:
+    description: 'Enables verbose logging output'
+    required: false
+    default: false
 
 outputs:
-  artifact-path:
-    description: 'Path to the downloaded and extracted artifact (directory)'
-    value: ${{ steps.locate.outputs.artifact_path }}
-  artifact-file-path:
-    description: 'Path to the specific file (if artifact-filename was provided)'
-    value: ${{ steps.locate-file.outputs.artifact_file_path }}
-  artifact-name:
-    description: 'Actual artifact name that was downloaded'
-    value: ${{ steps.download.outputs.artifact_name }}
-  artifact-size:
+  artifact:
+    description: 'Path to the downloaded and extracted artifact'
+    value: ${{ steps.download.outputs.artifact }}
+  artifact-dir:
+    description: 'Path to the downloaded and extracted artifact directory'
+    value: ${{ steps.download.outputs.artifact-dir }}
+  artifact-filename:
+    description: 'Path to the downloaded and extracted artifact'
+    value: ${{ steps.download.outputs.artifact-filename }}
+  artifact-filesize:
     description: 'Size of the downloaded artifact in bytes'
+    value: ${{ steps.finalize.outputs.artifact_size }}
+  artifact-checksum:
+    description: 'Checksum of the downloaded artifact'
     value: ${{ steps.finalize.outputs.artifact_size }}
 
 runs:
   using: composite
   steps:
-    - name: Validate Inputs
-      id: validate
+    - name: Validate inputs
       shell: bash
       env:
-        INPUT_RUN_ID: ${{ inputs.run-id }}
-        INPUT_ARTIFACT_NAME: ${{ inputs.artifact-name }}
-        INPUT_ARTIFACT_FILENAME: ${{ inputs.artifact-filename }}
+        OPENDAQ_ARIFACT_RUN_ID: ${{ inputs.run-id }}
+        OPENDAQ_FRAMEWORK_ARTIFACT_NAME: "${{ inputs.artifact-name }}"
+        OPENDAQ_FRAMEWORK_ARTIFACT_FILENAME: "${{ inputs.artifact-filename }}"
+        OPENDAQ_FRAMEWORK_OUTPUT_DIR: "${{ inputs.output-dir }}"
       run: |
-        set -e
-        
-        # Validate run-id is numeric
-        if ! [[ "$INPUT_RUN_ID" =~ ^[0-9]+$ ]]; then
-          echo "::error::Invalid run-id format. Must be numeric."
+        if [ -z "$OPENDAQ_ARIFACT_RUN_ID" ]; then
+          echo "::error::❌ Artifact workflow run ID must not be empty"
           exit 1
         fi
         
-        # Validate artifact-name is not empty
-        if [ -z "$INPUT_ARTIFACT_NAME" ]; then
-          echo "::error::Artifact name cannot be empty"
+        if ! echo "$OPENDAQ_ARIFACT_RUN_ID" | grep -qE '^[0-9]+$'; then
+          echo "::error::❌ Artifact workflow run ID must be numenric (${OPENDAQ_ARIFACT_RUN_ID:-"<empty>"})"
           exit 1
         fi
-        
-        # Validate artifact-filename is not empty
-        if [ -z "$INPUT_ARTIFACT_FILENAME" ]; then
-          echo "::error::Artifact filename cannot be empty"
+
+        if [ -z "$OPENDAQ_FRAMEWORK_ARTIFACT_NAME" ]; then
+          echo "::error::❌ Artifact name must not be empty"
           exit 1
         fi
-        
-        echo "✓ Inputs validated successfully"
-        echo "  Run ID: $INPUT_RUN_ID"
-        echo "  Artifact: $INPUT_ARTIFACT_NAME"
-        echo "  File to extract: $INPUT_ARTIFACT_FILENAME"
-    
-    - name: Prepare Directories
-      id: prepare
+
+        if [ -z "$OPENDAQ_FRAMEWORK_ARTIFACT_FILENAME" ]; then
+          echo "::error::❌ Artifact filename must not be empty"
+          exit 1
+        fi
+
+        if [ -z "$OPENDAQ_FRAMEWORK_OUTPUT_DIR" ]; then
+          echo "::warning::⚠️ Artifact output directory is set to default '${{ runner.temp }}'"
+        fi
+
+    - name: Init shell scripts
+      id: shell-scripts
       shell: bash
       env:
-        INPUT_OUTPUT_DIR: ${{ inputs.output-dir }}
-        RUNNER_TEMP: ${{ runner.temp }}
+        OPENDAQ_FRAMEWORK_ARTIFACT_NAME: "${{ inputs.artifact-name }}"
+        OPENDAQ_FRAMEWORK_ARTIFACT_FILENAME: "${{ inputs.artifact-filename }}"
+        OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR: "${{ inputs.output-dir || runner.temp }}"
+        OPENDAQ_ACTIONS_SCRIPS_DIR: "${{ github.action_path }}/../scripts/shell/bash"
+        OPENDAQ_GH_API_CACHE_DIR: "${{ runner.temp }}"
       run: |
-        set -e
-        
-        # Determine output directory
-        if [ -n "$INPUT_OUTPUT_DIR" ]; then
-          OUTPUT_DIR="$INPUT_OUTPUT_DIR"
-          echo "Using provided output directory: $OUTPUT_DIR"
-        else
-          OUTPUT_DIR="$RUNNER_TEMP/downloaded-artifacts"
-          echo "Using default temp directory: $OUTPUT_DIR"
-        fi
-        
-        # Normalize path for Windows (cygpath)
-        if command -v cygpath &> /dev/null; then
-          NORMALIZED_PATH=$(cygpath -u "$OUTPUT_DIR")
-          echo "Path normalized for Windows:"
-          echo "  Original: $OUTPUT_DIR"
-          echo "  Normalized: $NORMALIZED_PATH"
-          OUTPUT_DIR="$NORMALIZED_PATH"
-        fi
-        
-        # Create directory if it doesn't exist
-        mkdir -p "$OUTPUT_DIR"
-        
-        # Store in output
-        echo "output_dir=$OUTPUT_DIR" >> $GITHUB_OUTPUT
-        echo "✓ Output directory prepared: $OUTPUT_DIR"
-    
-    - name: Prepare Debug Directory
-      id: debug-dir
-      shell: bash
-      env:
-        RUNNER_TEMP: ${{ runner.temp }}
-        INPUT_VERBOSE: ${{ inputs.verbose }}
-      run: |
-        set -e
-        
-        # Setup debug directory
-        DEBUG_DIR="$RUNNER_TEMP/opendaq-gh-debug"
-        mkdir -p "$DEBUG_DIR"
-        
-        # Normalize path for Windows
-        if command -v cygpath &> /dev/null; then
-          DEBUG_DIR=$(cygpath -u "$DEBUG_DIR")
-        fi
-        
-        echo "debug_dir=$DEBUG_DIR" >> $GITHUB_OUTPUT
-        
-        if [ "$INPUT_VERBOSE" = "true" ]; then
-          echo "✓ Debug directory prepared: $DEBUG_DIR"
-        fi
-    
+        dirs=(
+          "OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR"
+          "OPENDAQ_ACTIONS_SCRIPS_DIR" 
+          "OPENDAQ_GH_API_CACHE_DIR"
+        )
+        for dir_name in "${dirs[@]}"; do
+          # Get current value via indirect expansion
+          dir_value="${!dir_name}"
+
+          # Normalize path for Windows (convert to Unix-style)
+          if command -v cygpath >/dev/null 2>&1; then
+            dir_value="$(cygpath "$dir_value")"
+          fi
+
+          # Check if directory exists
+          if [ ! -d "$dir_value" ]; then
+              echo "⚠️ Directory not found at '$dir_value'. Attempting to create..."
+              if ! mkdir -p "$dir_value"; then
+                echo "❌ Error: failed to create directory '$dir_value'" >&2
+                exit 1
+              fi
+          fi
+
+          # Resolve absolute path
+          dir_value="$(cd "$dir_value" >/dev/null 2>&1 && pwd)"
+          echo "✔ Normalized dir $dir_name=$dir_value"
+          
+          # Assign back via indirect expansion
+          export "$dir_name"="$dir_value"
+
+        done
+
+        # List of scripts that must be executable
+        scripts=(
+          "lib/api-github-gh.sh"
+        )
+
+        # Iterate and apply +x with error handling
+        for rel_path in "${scripts[@]}"; do
+          script_path="${OPENDAQ_ACTIONS_SCRIPS_DIR}/${rel_path}"
+
+          if [ ! -f "$script_path" ]; then
+            echo "❌ Error: missing script '$script_path'" >&2
+            exit 1
+          fi
+
+          if ! chmod +x "$script_path"; then
+            echo "❌ Error: failed to chmod +x '$script_path'" >&2
+            exit 1
+          fi
+
+          echo "✔ Marked as executable: $rel_path"
+        done
+
+        # Export normalized directory path to step output
+        echo "artifact-dir=$OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+        echo "script-dir=$OPENDAQ_ACTIONS_SCRIPS_DIR" >> "$GITHUB_OUTPUT"
+        echo "cache-dir=$OPENDAQ_GH_API_CACHE_DIR" >> "$GITHUB_OUTPUT"
+
     - name: Download and Extract Artifact
       id: download
-      # timeout-minutes: ${{ inputs.timeout-minutes }}
       shell: bash
       env:
-        INPUT_RUN_ID: ${{ inputs.run-id }}
-        INPUT_ARTIFACT_NAME: ${{ inputs.artifact-name }}
-        INPUT_REPOSITORY: ${{ inputs.repository }}
-        INPUT_TOKEN: ${{ inputs.token }}
-        VERBOSE_FLAG: ${{ inputs.verbose == 'true' && '--verbose' || '' }}
-        OUTPUT_DIR: ${{ steps.prepare.outputs.output_dir }}
-        DEBUG_DIR: ${{ steps.debug-dir.outputs.debug_dir }}
+        OPENDAQ_ARIFACT_RUN_ID: ${{ inputs.run-id }}
+        OPENDAQ_FRAMEWORK_ARTIFACT_NAME: "${{ inputs.artifact-name }}"
+        OPENDAQ_FRAMEWORK_ARTIFACT_FILENAME: "${{ inputs.artifact-filename }}"
+        OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR: "${{ steps.shell-scripts.outputs.artifact-dir }}"
+        OPENDAQ_ACTIONS_SCRIPS_DIR: "${{ steps.shell-scripts.outputs.script-dir }}"
+        OPENDAQ_GH_API_CACHE_DIR: "${{ steps.shell-scripts.outputs.cache-dir }}"
+        OPENDAQ_GH_API_GITHUB_REPO: 'openDAQ/openDAQ'
         GITHUB_TOKEN: ${{ inputs.token || github.token }}
         RETRY_ATTEMPTS: ${{ inputs.retry-attempts }}
-      run: |
-        set -e
-        set -o pipefail
-        
-        # Set debug directory for api-github-gh.sh
-        export OPENDAQ_GH_API_DEBUG="$DEBUG_DIR"
-        
-        SCRIPT_DIR="${{ github.action_path }}/../scripts/shell/bash/lib"
-        API_SCRIPT="$SCRIPT_DIR/api-github-gh.sh"
-        
-        # Verify script exists
-        if [ ! -f "$API_SCRIPT" ]; then
-          echo "::error::Script not found: $API_SCRIPT"
-          echo "Expected location: $SCRIPT_DIR"
-          ls -la "$SCRIPT_DIR" || true
-          exit 1
-        fi
-        
-        echo "=== Download Configuration ==="
-        echo "Repository: $INPUT_REPOSITORY"
-        echo "Run ID: $INPUT_RUN_ID"
-        echo "Artifact Pattern: $INPUT_ARTIFACT_NAME"
-        echo "Output Directory: $OUTPUT_DIR"
-        echo "Max Retries: $RETRY_ATTEMPTS"
-        echo ""
-        
-        # Create temporary marker for cleanup
-        TEMP_MARKER="$OUTPUT_DIR/.download-in-progress"
-        touch "$TEMP_MARKER"
-        
-        # Cleanup function
-        cleanup() {
-          rm -f "$TEMP_MARKER"
-        }
-        trap cleanup EXIT
-        
+      run: |      
+        API_SCRIPT="$OPENDAQ_ACTIONS_SCRIPS_DIR/lib/api-github-gh.sh"
+
         # Download with retry logic
-        ATTEMPT=1
-        SUCCESS=false
-        
-        while [ $ATTEMPT -le $RETRY_ATTEMPTS ] && [ "$SUCCESS" = false ]; do
-          echo "=== Download Attempt $ATTEMPT/$RETRY_ATTEMPTS ==="
+        attempt=1
+        status=false
+
+        dir="${OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR}/${OPENDAQ_FRAMEWORK_ARTIFACT_NAME}"
+        artifact="$dir/${OPENDAQ_FRAMEWORK_ARTIFACT_FILENAME}"
+
+        echo "⬇ Download artifact from workflow run id '$OPENDAQ_ARIFACT_RUN_ID' at '$artifact'"        
+        while [ $attempt -le $RETRY_ATTEMPTS ] && [ "$status" = false ]; do
+          echo "↪ Download attempt $attempt/$RETRY_ATTEMPTS ==="
           
-          if "$API_SCRIPT" $VERBOSE_FLAG "$INPUT_REPOSITORY" \
+          if "$API_SCRIPT" \
             --download-artifact \
-            --run-id "$INPUT_RUN_ID" \
-            --output-dir "$OUTPUT_DIR" \
-            --pattern "$INPUT_ARTIFACT_NAME" \
-            --extract 2>&1 | tee "$DEBUG_DIR/download-attempt-$ATTEMPT.log"; then
+            --run-id "$OPENDAQ_ARIFACT_RUN_ID" \
+            --output-dir "$OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR" \
+            --pattern "$OPENDAQ_FRAMEWORK_ARTIFACT_NAME" \
+            --extract; then
             
-            SUCCESS=true
-            echo "✓ Download successful on attempt $ATTEMPT"
+            status=true
+            echo "✔ Download successful on attempt $attempt"
           else
-            EXIT_CODE=$?
-            echo "::warning::Download attempt $ATTEMPT failed with exit code $EXIT_CODE"
+            echo "::warning::⚠️ Download attempt $attempt failed with exit code $?"
             
-            if [ $ATTEMPT -lt $RETRY_ATTEMPTS ]; then
-              WAIT_TIME=$((ATTEMPT * 10))
-              echo "Waiting ${WAIT_TIME}s before retry..."
+            if [ $attempt -lt $RETRY_ATTEMPTS ]; then
+              WAIT_TIME=$((attempt * 10))
+              echo "⏳ Waiting ${WAIT_TIME}s before retry..."
               sleep $WAIT_TIME
             fi
             
-            ATTEMPT=$((ATTEMPT + 1))
+            attempt=$((attempt + 1))
           fi
         done
         
-        if [ "$SUCCESS" = false ]; then
-          echo "::error::Failed to download artifact after $RETRY_ATTEMPTS attempts"
-          echo "Debug logs available at: $DEBUG_DIR"
-          ls -la "$DEBUG_DIR" || true
+        if [ "$status" = false ]; then
+          echo "::error::❌ Failed to download artifact after '$RETRY_ATTEMPTS' attempts"
           exit 1
+        fi
+
+        if [ ! -d "$dir" ]; then
+          echo "::error::❌ Artifact directory not found at '$dir'"
+          ls -la $(dirname "$dir")
+          exit 1
+        fi
+
+        if [ ! -f "$artifact" ]; then
+          echo "::error::❌ Artifact filename not found at '$artifact'"
+          ls -la $(dirname "$artifact")
+          exit 1
+        fi
+
+        echo "✔ Artefact exists at $artifact"
+
+        if ! filesize=$(
+          stat -c%s "$artifact" 2>/dev/null || \
+          stat -f%z "$artifact" 2>/dev/null || \
+          stat -L -t "$artifact" 2>/dev/null | awk '{print $2}' || \
+          powershell -Command "(Get-Item '$artifact').Length" 2>/dev/null
+        ); then
+          echo "::warning::⚠️ Failed to check artifact file size $artifact"
+        else
+          echo "✔ Artefact filesize: ${filesize:-<unavailable>} (bytes)"
+        fi
+
+        if ! checksum=$(sha256sum "$artifact" 2>/dev/null | awk '{print $1}'); then
+          echo "::warning::⚠️ Failed to calculate the artifact checksum ($RETRY_ATTEMPTS attempts) $artifact"
+        else
+          echo "✔ Artefact checksum: sha256:${checksum:-<unavailable>}"
         fi
         
         # Store artifact name
-        echo "artifact_name=$INPUT_ARTIFACT_NAME" >> $GITHUB_OUTPUT
-        echo "✓ Artifact downloaded and extracted successfully"
-    
-    - name: Locate Extracted Artifact
-      id: locate
-      shell: bash
-      env:
-        OUTPUT_DIR: ${{ steps.prepare.outputs.output_dir }}
-        INPUT_ARTIFACT_NAME: ${{ inputs.artifact-name }}
-        VERBOSE: ${{ inputs.verbose }}
-      run: |
-        set -e
-        
-        echo "=== Locating Extracted Artifact ==="
-        
-        # Remove temporary marker if exists
-        rm -f "$OUTPUT_DIR/.download-in-progress"
-        
-        # Strategy 1: Direct match with artifact name (without extension)
-        ARTIFACT_BASE="${INPUT_ARTIFACT_NAME%.*}"
-        if [ -d "$OUTPUT_DIR/$ARTIFACT_BASE" ]; then
-          ARTIFACT_PATH="$OUTPUT_DIR/$ARTIFACT_BASE"
-          echo "✓ Found via direct match: $ARTIFACT_PATH"
-        # Strategy 2: Single item in directory
-        elif [ "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 -not -name '.*' | wc -l)" -eq 1 ]; then
-          ARTIFACT_PATH=$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 -not -name '.*')
-          echo "✓ Found single item: $ARTIFACT_PATH"
-        # Strategy 3: Use output directory itself
-        else
-          ARTIFACT_PATH="$OUTPUT_DIR"
-          echo "✓ Using output directory: $ARTIFACT_PATH"
-        fi
-        
-        # Verify artifact exists
-        if [ ! -e "$ARTIFACT_PATH" ]; then
-          echo "::error::Artifact not found at determined path: $ARTIFACT_PATH"
-          echo "Directory contents:"
-          ls -lah "$OUTPUT_DIR" || true
-          exit 1
-        fi
-        
-        # Display structure if verbose
-        if [ "$VERBOSE" = "true" ]; then
-          echo ""
-          echo "=== Artifact Structure ==="
-          if [ -d "$ARTIFACT_PATH" ]; then
-            find "$ARTIFACT_PATH" -maxdepth 2 -ls || true
-          else
-            ls -lh "$ARTIFACT_PATH"
-          fi
-        fi
-        
-        echo "artifact_path=$ARTIFACT_PATH" >> $GITHUB_OUTPUT
-    
-    - name: Locate Specific File
-      id: locate-file
-      shell: bash
-      env:
-        ARTIFACT_PATH: ${{ steps.locate.outputs.artifact_path }}
-        INPUT_ARTIFACT_FILENAME: ${{ inputs.artifact-filename }}
-        VERBOSE: ${{ inputs.verbose }}
-      run: |
-        set -e
-        
-        echo "=== Locating Specific File ==="
-        echo "Looking for: $INPUT_ARTIFACT_FILENAME"
-        echo "In artifact: $ARTIFACT_PATH"
-        echo ""
-        
-        # Ensure we're searching in a directory
-        if [ ! -d "$ARTIFACT_PATH" ]; then
-          # If artifact path is a file, check if it matches
-          FILENAME=$(basename "$ARTIFACT_PATH")
-          if [[ "$FILENAME" == $INPUT_ARTIFACT_FILENAME ]]; then
-            FILE_PATH="$ARTIFACT_PATH"
-            echo "✓ Artifact itself matches the file pattern: $FILE_PATH"
-          else
-            echo "::error::Artifact is a single file and doesn't match pattern: $INPUT_ARTIFACT_FILENAME"
-            exit 1
-          fi
-        else
-          # Search for the file in the artifact directory
-          # Try exact match first
-          if [ -f "$ARTIFACT_PATH/$INPUT_ARTIFACT_FILENAME" ]; then
-            FILE_PATH="$ARTIFACT_PATH/$INPUT_ARTIFACT_FILENAME"
-            echo "✓ Found via exact match: $FILE_PATH"
-          else
-            # Try glob pattern search
-            echo "Searching with pattern: $INPUT_ARTIFACT_FILENAME"
-            MATCHES=($(find "$ARTIFACT_PATH" -type f -name "$INPUT_ARTIFACT_FILENAME" 2>/dev/null || true))
-            
-            if [ ${#MATCHES[@]} -eq 0 ]; then
-              echo "::error::File not found: $INPUT_ARTIFACT_FILENAME"
-              echo ""
-              echo "Available files:"
-              find "$ARTIFACT_PATH" -type f -ls || true
-              exit 1
-            elif [ ${#MATCHES[@]} -eq 1 ]; then
-              FILE_PATH="${MATCHES[0]}"
-              echo "✓ Found via pattern match: $FILE_PATH"
-            else
-              echo "::error::Multiple files match pattern: $INPUT_ARTIFACT_FILENAME"
-              echo "Matches found:"
-              printf '%s\n' "${MATCHES[@]}"
-              echo ""
-              echo "Please specify a more specific file name pattern"
-              exit 1
-            fi
-          fi
-        fi
-        
-        # Verify file exists and is readable
-        if [ ! -f "$FILE_PATH" ]; then
-          echo "::error::Located path is not a file: $FILE_PATH"
-          exit 1
-        fi
-        
-        if [ ! -r "$FILE_PATH" ]; then
-          echo "::error::File is not readable: $FILE_PATH"
-          exit 1
-        fi
-        
-        # Display file info if verbose
-        if [ "$VERBOSE" = "true" ]; then
-          echo ""
-          echo "=== File Information ==="
-          ls -lh "$FILE_PATH"
-          echo ""
-          echo "File type:"
-          file "$FILE_PATH" || echo "file command not available"
-        fi
-        
-        echo "artifact_file_path=$FILE_PATH" >> $GITHUB_OUTPUT
-        echo "✓ File located successfully: $FILE_PATH"
-    
-    - name: Finalize and Report
-      id: finalize
-      shell: bash
-      env:
-        ARTIFACT_PATH: ${{ steps.locate.outputs.artifact_path }}
-        FILE_PATH: ${{ steps.locate-file.outputs.artifact_file_path }}
-      run: |
-        set -e
-        
-        # Measure file size (always measuring the specific file)
-        MEASURE_PATH="$FILE_PATH"
-        
-        # Calculate size
-        if [ -d "$MEASURE_PATH" ]; then
-          SIZE=$(du -sb "$MEASURE_PATH" 2>/dev/null | cut -f1 || echo "0")
-        else
-          SIZE=$(stat -f%z "$MEASURE_PATH" 2>/dev/null || stat -c%s "$MEASURE_PATH" 2>/dev/null || echo "0")
-        fi
-        
-        # Format size for display
-        if [ $SIZE -lt 1024 ]; then
-          SIZE_DISPLAY="${SIZE}B"
-        elif [ $SIZE -lt 1048576 ]; then
-          SIZE_DISPLAY="$((SIZE / 1024))KB"
-        elif [ $SIZE -lt 1073741824 ]; then
-          SIZE_DISPLAY="$((SIZE / 1048576))MB"
-        else
-          SIZE_DISPLAY="$((SIZE / 1073741824))GB"
-        fi
-        
-        echo "artifact_size=$SIZE" >> $GITHUB_OUTPUT
-        
-        echo ""
-        echo "=== Download Summary ==="
-        echo "✓ Artifact Path: $ARTIFACT_PATH"
-        echo "✓ File Path: $FILE_PATH"
-        echo "✓ File Size: $SIZE_DISPLAY"
-        echo ""
-    
-    - name: Display Debug Info
-      if: always() && inputs.verbose == 'true'
-      shell: bash
-      env:
-        DEBUG_DIR: ${{ steps.debug-dir.outputs.debug_dir }}
-        OUTPUT_DIR: ${{ steps.prepare.outputs.output_dir }}
-      run: |
-        echo "=== Debug Information ==="
-        echo "Debug Directory: $DEBUG_DIR"
-        echo "Output Directory: $OUTPUT_DIR"
-        echo ""
-        
-        if [ -d "$DEBUG_DIR" ]; then
-          echo "Debug Files:"
-          ls -lh "$DEBUG_DIR" || true
-          echo ""
-          
-          # Show last log if exists
-          LAST_LOG=$(ls -t "$DEBUG_DIR"/download-attempt-*.log 2>/dev/null | head -1)
-          if [ -n "$LAST_LOG" ]; then
-            echo "Last Download Log:"
-            tail -20 "$LAST_LOG" || true
-          fi
-        fi
-        
+        echo "artifact=$artifact" >> $GITHUB_OUTPUT
+        echo "artifact-dir=$dir" >> $GITHUB_OUTPUT
+        echo "artifact-filename=$OPENDAQ_FRAMEWORK_ARTIFACT_NAME" >> $GITHUB_OUTPUT
+        echo "artifact-filesize=$filesize" >> $GITHUB_OUTPUT
+        echo "artifact-checksum=$checksum" >> $GITHUB_OUTPUT
