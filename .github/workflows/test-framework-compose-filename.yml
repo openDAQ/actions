@@ -1,0 +1,240 @@
+name: "Test Framework Compose Filename Action"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/test-framework-compose-filename.yml'
+      - '.github/actions/framework-compose-filename/action.yml'
+      - '.github/scripts/**'
+  pull_request:
+    paths:
+      - '.github/workflows/test-framework-compose-filename.yml'
+      - '.github/actions/framework-compose-filename/action.yml'
+      - '.github/scripts/**'
+
+jobs:
+  # ============================================================================
+  # Job: Platform detection test
+  # Test auto-detection of platform + packaging on different OS/arch
+  # Version is fixed: v1.40.9
+  # ============================================================================
+  test-platform-detection:
+    name: Test autodetect ${{ matrix.os }} framework composition
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu x86_64
+          - os: ubuntu-22.04
+            expected-platform: ubuntu22.04-x86_64
+            expected-extension: deb
+          - os: ubuntu-24.04
+            expected-platform: ubuntu24.04-x86_64
+            expected-extension: deb
+          
+          # Ubuntu arm64
+          - os: ubuntu-22.04-arm
+            expected-platform: ubuntu22.04-arm64
+            expected-extension: deb
+          - os: ubuntu-24.04-arm
+            expected-platform: ubuntu24.04-arm64
+            expected-extension: deb
+          
+          # macOS Intel (x86_64)
+          - os: macos-13
+            expected-platform: macos13-x86_64
+            expected-extension: tar.gz
+          
+          # macOS Apple Silicon (arm64)
+          - os: macos-14
+            expected-platform: macos14-arm64
+            expected-extension: tar.gz
+          - os: macos-15
+            expected-platform: macos15-arm64
+            expected-extension: tar.gz
+          
+          # Windows (only latest, always x64)
+          - os: windows-latest
+            expected-platform: win64
+            expected-extension: exe
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Run action with fixed version
+        id: action
+        uses: ./framework-compose-filename
+        with:
+          version: v1.40.9
+      
+      - name: Validate filename
+        shell: bash
+        env:
+          EXPECTED_PLATFORM: ${{ matrix.expected-platform }}
+          EXPECTED_EXTENSION: ${{ matrix.expected-extension }}
+          ACTUAL_FILENAME: ${{ steps.action.outputs.filename }}
+        run: |          
+          expected_pattern="opendaq-v1.40.9-${EXPECTED_PLATFORM}.${EXPECTED_EXTENSION}"
+          if [ "$ACTUAL_FILENAME" = "$expected_pattern" ]; then
+            echo "PASS: $ACTUAL_FILENAME"
+            exit 0
+          else
+            echo "FAIL: Filename mismatch"
+            echo "  Expected: $expected_pattern"
+            echo "  Got:      $ACTUAL_FILENAME"
+            exit 1
+          fi
+
+  # ============================================================================
+  # Job: Explicit parameters test
+  # Test 1: Fixed version v1.40.9 + explicit platforms
+  # Test 2: Fixed platform ubuntu22.04-x86_64 + latest version
+  # ============================================================================
+  test-explicit-parameters:
+    name: Test explicit ${{ matrix.platform }} ${{ matrix.version }} framework composition
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Test explicit platforms with fixed version
+          - test-name: "Platform ubuntu20.04-x86_64"
+            test-type: explicit-platform
+            version: v1.40.9
+            platform: ubuntu20.04-x86_64
+            expected-filename: opendaq-v1.40.9-ubuntu20.04-x86_64.deb
+          
+          - test-name: "Platform ubuntu22.04-arm64"
+            test-type: explicit-platform
+            version: v1.40.9
+            platform: ubuntu22.04-arm64
+            expected-filename: opendaq-v1.40.9-ubuntu22.04-arm64.deb
+          
+          - test-name: "Platform debian11-x86_64"
+            test-type: explicit-platform
+            version: v1.40.9
+            platform: debian11-x86_64
+            expected-filename: opendaq-v1.40.9-debian11-x86_64.deb
+          
+          - test-name: "Platform macos14-arm64"
+            test-type: explicit-platform
+            version: v1.40.9
+            platform: macos14-arm64
+            expected-filename: opendaq-v1.40.9-macos14-arm64.tar.gz
+          
+          - test-name: "Platform win64"
+            test-type: explicit-platform
+            version: v1.40.9
+            platform: win64
+            expected-filename: opendaq-v1.40.9-win64.exe
+          
+          # Test latest version with fixed platform
+          - test-name: "Latest version"
+            test-type: latest-version
+            version: latest
+            platform: ubuntu22.04-x86_64
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Get latest version for latest-version test
+      - name: Get latest version
+        if: matrix.test-type == 'latest-version'
+        id: latest-version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(gh release list --repo openDAQ/openDAQ --json tagName,isLatest -q '.[] | select(.isLatest == true) | .tagName')
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Latest version: $version"
+      
+      - name: Run action
+        id: action
+        uses: ./framework-compose-filename
+        with:
+          version: ${{ matrix.version }}
+          platform: ${{ matrix.platform }}
+      
+      # Validate explicit platform test
+      - name: Validate explicit platform
+        if: matrix.test-type == 'explicit-platform'
+        shell: bash
+        env:
+          EXPECTED_FILENAME: ${{ matrix.expected-filename }}
+          ACTUAL_FILENAME: ${{ steps.action.outputs.filename }}
+        run: |
+          if [ "$ACTUAL_FILENAME" = "$EXPECTED_FILENAME" ]; then
+            echo "PASS: $ACTUAL_FILENAME"
+            exit 0
+          else
+            echo "FAIL: Filename mismatch"
+            echo "  Expected: $EXPECTED_FILENAME"
+            echo "  Got:      $ACTUAL_FILENAME"
+            exit 1
+          fi
+      
+      # Validate latest version test
+      - name: Validate latest version
+        if: matrix.test-type == 'latest-version'
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ steps.latest-version.outputs.version }}
+          EXPECTED_PLATFORM: ${{ matrix.platform }}
+          ACTUAL_FILENAME: ${{ steps.action.outputs.filename }}
+        run: |
+          expected_filename="opendaq-${EXPECTED_VERSION}-${EXPECTED_PLATFORM}.deb"
+          
+          if [ "$ACTUAL_FILENAME" = "$expected_filename" ]; then
+            echo "PASS: $ACTUAL_FILENAME"
+            exit 0
+          else
+            echo "FAIL: Filename mismatch"
+            echo "  Expected: $expected_filename"
+            echo "  Got:      $ACTUAL_FILENAME"
+            exit 1
+          fi
+
+  # ============================================================================
+  # Job: Display tests summary
+  # ============================================================================
+  test-summary:
+    name: Test Results
+    runs-on: ubuntu-latest
+    needs: [test-platform-detection, test-explicit-parameters]
+    if: always()
+    
+    steps:
+      - name: Generate summary
+        shell: bash
+        run: |          
+          # Determine overall status
+          overall_status="PASS"
+          if [ "${{ needs.test-platform-detection.result }}" != "success" ] || \
+             [ "${{ needs.test-explicit-parameters.result }}" != "success" ]; then
+            overall_status="FAIL"
+          fi
+          
+          # Overall status with icon
+          if [ "$overall_status" = "PASS" ]; then
+            status="## Overall Status: ✅ PASS"
+            result="All tests passed successfully! 🎉"
+          else
+            status="## Overall Status: ❌ FAIL"
+            result="⚠️ Some tests failed. Check individual job logs for details."
+          fi
+          
+          echo "$status" >> $GITHUB_STEP_SUMMARY
+          echo "$result" >> $GITHUB_STEP_SUMMARY
+
+          echo "$status"
+          echo "$result"
+
+          # Workflow status is determined by needs.*.result
+          exit 0

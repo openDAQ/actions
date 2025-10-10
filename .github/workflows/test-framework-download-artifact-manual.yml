@@ -1,0 +1,75 @@
+name: Test Framework Download Artifact (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner to use for testing'
+        required: false
+        default: 'ubuntu-latest'
+        type: string
+      run-id:
+        description: 'Workflow run ID to download artifact from'
+        required: true
+        type: string
+      artifact-name:
+        description: 'Artifact name pattern'
+        required: true
+        type: string
+      artifact-filename:
+        description: 'File name to extract from artifact'
+        required: true
+        type: string
+      output-dir:
+        description: 'Output directory (leave empty for default)'
+        required: false
+        type: string
+      retry-attempts:
+        description: 'Number of retry attempts'
+        required: false
+        default: '3'
+        type: string
+
+jobs:
+  test-download:
+    name: Test Download on ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner }}
+    
+    steps:
+      - name: Checkout Actions Repository
+        uses: actions/checkout@v4
+      
+      - name: Display Inputs
+        shell: bash
+        run: |
+          echo "📥 Inputs: Download Package:"
+          echo "🖥  Runner: ${{ inputs.runner               || '*** NOT SET ***' }}"
+          echo "🚀 Run ID: ${{ inputs.run-id                || '*** NOT SET ***' }}"
+          echo "📦 Artifact"
+          echo " ├─ 🏷  Name: ${{ inputs.artifact-name      || '*** NOT SET ***' }}"
+          echo " └─ 📄 File: ${{ inputs.artifact-filename   || '*** NOT SET ***' }}"
+          echo "📂 Output Dir: ${{ inputs.output-dir        || '*** NOT SET ***' }}"
+          echo "🔄   Attempts: ${{ inputs.retry-attempts    || '*** NOT SET ***' }}"
+          echo ""
+      
+      - name: Download and Extract Artifact
+        id: download
+        uses: ./framework-download-artifact
+        with:
+          run-id: ${{ inputs.run-id }}
+          artifact-name: ${{ inputs.artifact-name }}
+          artifact-filename: ${{ inputs.artifact-filename }}
+          output-dir: ${{ inputs.output-dir }}
+          retry-attempts: ${{ inputs.retry-attempts }}
+      
+      - name: Display outputs
+        if: always()
+        shell: bash
+        run: |
+          echo "📤 Outputs: Download Package:"
+          echo "📂 Directory:    ${{ steps.download.outputs.artifact-dir      || '*** ❌ NOT AVAILABLE ***' }}"
+          echo "  ├─ 📄 Filename: ${{ steps.download.outputs.artifact-filename || '*** ❌ NOT AVAILABLE ***' }}"
+          echo "  ├─ 🔒 Checksum: ${{ steps.download.outputs.artifact-checksum || '*** ❌ NOT AVAILABLE ***' }}"
+          echo "  └─ 💾 Filesize: ${{ steps.download.outputs.artifact-filesize || '*** ❌ NOT AVAILABLE ***' }}"
+          echo "📦 Artifact:     ${{ steps.download.outputs.artifact          || '*** ❌ NOT AVAILABLE ***' }}"
+          echo ""

@@ -1,0 +1,34 @@
+name: "Call action manually: framework compose filename"
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner to use (e.g. ubuntu-latest, ubuntu-22.04, windows-latest, etc)"
+        type: string
+        required: false
+        default: ubuntu-latest
+      version:
+        description: 'OpenDAQ version (if not set, resolves to latest from openDAQ/openDAQ)'
+        required: false
+      platform:
+        description: 'Target platform (if not set, auto-detected)'
+        required: false
+      packaging:
+        description: 'Packaging format for cpack (if not set, uses runner OS name)'
+        required: false
+
+jobs:
+  call-download:
+    runs-on: ${{ inputs.runner }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Compose openDAQ framework filename
+      id: call-framework-compose-filename
+      uses: ./framework-compose-filename
+      with:
+        version: ${{ inputs.version }}
+        platform: ${{ inputs.platform }}
+        packaging: ${{ inputs.packaging }}
