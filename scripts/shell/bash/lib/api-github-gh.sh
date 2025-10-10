@@ -195,7 +195,7 @@ __daq_api_gh_log() {
 }
 
 __daq_api_gh_error() {
-    echo "[ERROR] $*" >&2
+    echo "❌ $*" >&2
 }
 
 __daq_api_gh_info() {
@@ -847,11 +847,11 @@ daq_api_gh_artifacts_download() {
     
     if [[ -z "$artifacts_json" ]]; then
         if [[ -n "$pattern" ]]; then
-            __daq_api_gh_info "No artifacts matching pattern '$pattern' for run ${run_id}"
+            __daq_api_gh_error "No artifacts matching pattern '$pattern' for run ${run_id}"
         else
-            __daq_api_gh_info "No artifacts found for run ${run_id}"
+            __daq_api_gh_error "No artifacts found for run ${run_id}"
         fi
-        return 0
+        return 1
     fi
     
     # Download each artifact
