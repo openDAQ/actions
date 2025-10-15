@@ -151,6 +151,40 @@ __daq_version_match "$version"
 echo "$__MATCH_MAJOR"
 ```
 
+### Configuration Arrays
+
+For module configuration (supported versions, formats, etc.):
+
+**If configuration is part of public API:**
+```bash
+readonly OPENDAQ_<MODULE>_<CONFIG>=("value1" "value2")
+```
+
+**If configuration is internal:**
+```bash
+readonly __DAQ_<MODULE>_<CONFIG>=("value1" "value2")
+```
+
+**Best practices:**
+- Always use `readonly` for configuration that shouldn't change at runtime
+- Use public prefix (`OPENDAQ_`) if users may need to read these values
+- Use private prefix (`__DAQ_`) if values are purely internal
+- Document which values are supported in README.md
+
+**Examples from platform-format.sh:**
+
+```bash
+# Private configuration (internal use only)
+readonly __DAQ_PLATFORM_UBUNTU_VERSIONS=("20.04" "22.04" "24.04")
+readonly __DAQ_PLATFORM_DEBIAN_VERSIONS=("8" "9" "10" "11" "12")
+readonly __DAQ_PLATFORM_LINUX_ARCHS=("arm64" "x86_64")
+
+# Alternative: Public configuration (if users need to read)
+readonly OPENDAQ_PLATFORM_UBUNTU_VERSIONS=("20.04" "22.04" "24.04")
+```
+
+**Note:** In platform-format.sh, these arrays use private prefix (`__DAQ_`) but could be made public (`OPENDAQ_`) if there's a use case for external code to read supported versions.
+
 ## Module Naming
 
 ### Script Files
@@ -315,12 +349,12 @@ readonly OPENDAQ_VERSION_FORMATS=("X.Y.Z")
 
 ### Creating New Module
 
-1. Choose module name: `<module>-format.sh`
+1. Choose module name: `<module>.sh`
 2. Define prefix: `daq_<module>_`
 3. Create constants: `OPENDAQ_<MODULE>_*`
 4. Create public functions: `daq_<module>_<action>`
 5. Create private functions: `__daq_<module>_<name>`
-6. Document public API in `docs/scripts/shell/bash/<module>-format/API.md`
+6. Document public API in `docs/scripts/shell/bash/<module>/API.md`
 
 ## Verification Checklist
 
@@ -351,3 +385,4 @@ Following these conventions provides:
 ## See Also
 
 - [version-format.sh](version-format/README.md) - Example implementation
+- [platform-format.sh](platform-format/README.md) - Example implementation
