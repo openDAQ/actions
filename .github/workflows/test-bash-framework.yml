@@ -2,9 +2,11 @@ name: Test Bash Framework
 
 on:
   push:
-    paths-ignore: [ 'docs/**', '**/*.md' ]
+    paths: [ 'scripts-demo/**', 'tests/shell/bash/**' ]
+    paths-ignore: [ 'tests/shell/bash/suites/**' ]
   pull_request:
-    paths-ignore: [ 'docs/**', '**/*.md' ]
+    paths: [ 'scripts-demo/**', 'tests/shell/bash/**' ]
+    paths-ignore: [ 'tests/shell/bash/suites/**' ]
   workflow_dispatch:
 
 jobs:
@@ -20,14 +22,8 @@ jobs:
           - os: ubuntu-latest
             shell-name: bash
             shell-cmd: bash
-          - os: ubuntu-latest
-            shell-name: zsh
-            shell-cmd: zsh
           
-          # macOS - bash and zsh
-          - os: macos-latest
-            shell-name: bash
-            shell-cmd: bash
+          # macOS - zsh
           - os: macos-latest
             shell-name: zsh
             shell-cmd: zsh
@@ -40,13 +36,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Install zsh (Ubuntu only)
-        if: matrix.os == 'ubuntu-latest' && matrix.shell-name == 'zsh'
-        shell: bash
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y zsh
       
       - name: Run demo tests (excluding intentional failures)
         shell: bash

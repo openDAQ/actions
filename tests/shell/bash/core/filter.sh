@@ -62,16 +62,28 @@ __daq_tests_filter_matches_any() {
     local test_name="$2"
     local patterns_array_name="$3"
     
-    eval "
-    for __pattern in \"\${${patterns_array_name}[@]}\"; do
-        __daq_tests_filter_parse_pattern \"\${__pattern}\"
+    # Get array size first to handle empty arrays
+    local array_size
+    array_size=$(eval "echo \${#${patterns_array_name}[@]}")
+    
+    if [[ "${array_size}" -eq 0 ]]; then
+        return 1
+    fi
+    
+    # Copy array to local variable using eval - single eval, safe approach
+    local -a patterns
+    eval "patterns=(\"\${${patterns_array_name}[@]}\")"
+    
+    # Clean iteration without eval
+    local pattern
+    for pattern in "${patterns[@]}"; do
+        __daq_tests_filter_parse_pattern "${pattern}"
         
-        if __daq_tests_match_pattern \"\${suite_name}\" \"\${__DAQ_TESTS_PATTERN_SUITE}\" && \
-           __daq_tests_match_pattern \"\${test_name}\" \"\${__DAQ_TESTS_PATTERN_TEST}\"; then
+        if __daq_tests_match_pattern "${suite_name}" "${__DAQ_TESTS_PATTERN_SUITE}" && \
+           __daq_tests_match_pattern "${test_name}" "${__DAQ_TESTS_PATTERN_TEST}"; then
             return 0
         fi
     done
-    "
     
     return 1
 }
