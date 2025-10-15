@@ -1,0 +1,399 @@
+name: 'Download OpenDAQ Release Asset'
+description: 'Downloads release assets from openDAQ/openDAQ repository'
+author: 'OpenDAQ Team'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API authentication'
+    required: false
+    default: ${{ github.token }}
+  
+  version:
+    description: 'Release version (e.g., v3.20.4) or "latest"'
+    required: false
+    default: 'latest'
+    
+  platform:
+    description: 'Target platform (e.g., ubuntu22.04-x86_64, win64, macos14-arm64) - auto-detected if not specified'
+    required: false
+    default: ''
+    
+  packaging:
+    description: 'Package format override (e.g., deb, exe, tar.gz, zip) - auto-detected if not specified'
+    required: false
+    default: ''
+    
+  asset-pattern:
+    description: 'Custom glob pattern to filter assets (overrides auto-detection)'
+    required: false
+    default: ''
+    
+  output-dir:
+    description: 'Output directory for downloaded assets'
+    required: false
+    default: '${{ runner.temp }}'
+    
+  verbose:
+    description: 'Enable verbose output'
+    required: false
+    default: 'false'
+
+outputs:
+  asset:
+    description: 'Full path to the downloaded asset'
+    value: ${{ steps.download.outputs.asset }}
+    
+  asset-dir:
+    description: 'Directory path where asset was downloaded'
+    value: ${{ steps.download.outputs.asset-dir }}
+    
+  asset-filename:
+    description: 'Name of the downloaded asset file'
+    value: ${{ steps.download.outputs.asset-filename }}
+    
+  asset-filesize:
+    description: 'Size of the downloaded asset in bytes'
+    value: ${{ steps.finalize.outputs.asset-filesize }}
+    
+  asset-checksum:
+    description: 'SHA256 checksum of the downloaded asset'
+    value: ${{ steps.finalize.outputs.asset-checksum }}
+    
+  version:
+    description: 'Resolved release version'
+    value: ${{ steps.resolve.outputs.version }}
+    
+  platform:
+    description: 'Detected or specified platform alias'
+    value: ${{ steps.resolve.outputs.platform }}
+    
+  packaging:
+    description: 'Package format/extension (e.g., deb, exe, tar.gz)'
+    value: ${{ steps.resolve.outputs.packaging }}
+
+runs:
+  using: composite
+  steps:
+    - name: Setup GitHub CLI authentication
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        echo "Setting up GitHub CLI authentication..."
+        
+        # Verify gh is available
+        if ! command -v gh >/dev/null 2>&1; then
+            echo "::error::GitHub CLI (gh) is not installed"
+            exit 1
+        fi
+        
+        # Export token for subsequent steps
+        echo "GH_TOKEN=$GH_TOKEN" >> $GITHUB_ENV
+        
+        # Test authentication
+        if gh auth status >/dev/null 2>&1; then
+            echo "✅ GitHub CLI authenticated successfully"
+        else
+            echo "::warning::GitHub CLI authentication check failed, but continuing with token"
+        fi
+    
+    - name: Setup environment
+      shell: bash
+      run: |
+        echo "Setting up environment variables..."
+        
+        # Set default output directory if not provided
+        output_dir="${{ inputs.output-dir }}"
+        if [ -z "$output_dir" ]; then
+            output_dir="${{ runner.temp }}"
+            echo "Using default output directory: $output_dir"
+        else
+            echo "Using specified output directory: $output_dir"
+        fi
+        
+        # Normalize output-dir path for cross-platform compatibility
+        if command -v cygpath >/dev/null 2>&1; then
+            output_dir="$(cygpath "$output_dir")"
+            echo "Normalized path (Windows): $output_dir"
+        fi
+        
+        echo "OUTPUT_DIR=$output_dir" >> $GITHUB_ENV
+        echo "VERBOSE=${{ inputs.verbose }}" >> $GITHUB_ENV
+        echo "Final output directory: $output_dir"
+
+    - name: Resolve version, platform and packaging
+      id: resolve
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PLATFORM: ${{ inputs.platform }}
+        INPUT_PACKAGING: ${{ inputs.packaging }}
+      run: |
+        SCRIPTS_DIR="${{ github.action_path }}/../scripts/shell/bash"
+        
+        echo "::group::Resolving version, platform and packaging"
+        
+        # Resolve platform
+        if [ -z "$INPUT_PLATFORM" ]; then
+            echo "Platform not specified, detecting current platform..."
+            PLATFORM=$("$SCRIPTS_DIR/platform-format.sh" detect)
+            if [ $? -ne 0 ]; then
+                echo "::error::Failed to detect platform"
+                exit 1
+            fi
+            echo "Detected platform: $PLATFORM"
+        else
+            echo "Using specified platform: $INPUT_PLATFORM"
+            PLATFORM="$INPUT_PLATFORM"
+            
+            # Validate platform
+            if ! "$SCRIPTS_DIR/platform-format.sh" validate "$PLATFORM"; then
+                echo "::error::Invalid platform: $PLATFORM"
+                exit 1
+            fi
+        fi
+        
+        # Extract OS name from platform
+        OS_NAME=$("$SCRIPTS_DIR/platform-format.sh" parse "$PLATFORM" --os-name)
+        echo "OS name: $OS_NAME"
+        
+        # Determine packaging format with priority:
+        # 1. Explicit input
+        # 2. Environment variables (OPENDAQ_PACKAGING_WIN/LINUX/MACOS)
+        # 3. Auto-detection from OS
+        # 4. Fallback defaults
+        
+        if [ -n "$INPUT_PACKAGING" ]; then
+            echo "Using explicitly specified packaging: $INPUT_PACKAGING"
+            PACKAGING="$INPUT_PACKAGING"
+        else
+            echo "Auto-detecting packaging format..."
+            
+            # Use CLI interface of packaging-format.sh
+            if PACKAGING=$("$SCRIPTS_DIR/packaging-format.sh" detect --os-name "$OS_NAME" 2>/dev/null); then
+                echo "Detected packaging from OS: $PACKAGING"
+            else
+                echo "::warning::Failed to detect packaging format, using fallback"
+                
+                # Fallback based on OS name
+                case "$OS_NAME" in
+                    ubuntu|debian)
+                        PACKAGING="deb"
+                        ;;
+                    macos)
+                        PACKAGING="tar.gz"
+                        ;;
+                    win)
+                        PACKAGING="exe"
+                        ;;
+                    *)
+                        PACKAGING="tar.gz"
+                        echo "::warning::Unknown OS: $OS_NAME, defaulting to tar.gz"
+                        ;;
+                esac
+                
+                echo "Fallback packaging: $PACKAGING"
+            fi
+        fi
+        
+        echo "Final packaging format: $PACKAGING"
+        
+        # Resolve version (will be handled by api-github-gh.sh)
+        VERSION="$INPUT_VERSION"
+        echo "Version: $VERSION"
+        
+        # Set outputs
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "platform=$PLATFORM" >> $GITHUB_OUTPUT
+        echo "packaging=$PACKAGING" >> $GITHUB_OUTPUT
+        
+        # Set env for next steps
+        echo "RESOLVED_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "RESOLVED_PLATFORM=$PLATFORM" >> $GITHUB_ENV
+        echo "RESOLVED_PACKAGING=$PACKAGING" >> $GITHUB_ENV
+        
+        echo "::endgroup::"
+
+    - name: Build asset pattern
+      id: pattern
+      shell: bash
+      env:
+        INPUT_PATTERN: ${{ inputs.asset-pattern }}
+        INPUT_PLATFORM: ${{ inputs.platform }}
+      run: |
+        SCRIPTS_DIR="${{ github.action_path }}/../scripts/shell/bash"
+        
+        echo "::group::Building asset pattern"
+        
+        if [ -n "$INPUT_PATTERN" ]; then
+            echo "Using custom pattern: $INPUT_PATTERN"
+            PATTERN="$INPUT_PATTERN"
+        else
+            echo "Building pattern from platform..."
+            
+            # Parse platform components using CLI
+            OS_NAME=$("$SCRIPTS_DIR/platform-format.sh" parse "$RESOLVED_PLATFORM" --os-name)
+            OS_ARCH=$("$SCRIPTS_DIR/platform-format.sh" parse "$RESOLVED_PLATFORM" --os-arch)
+            
+            # Check if platform was explicitly provided or auto-detected
+            if [ -z "$INPUT_PLATFORM" ]; then
+                # Platform was auto-detected - use OS name + arch with version wildcard
+                echo "Platform was auto-detected, using pattern: OS + wildcard version + arch"
+                
+                if [ "$OS_NAME" = "win" ]; then
+                    # Windows: *win*64*.exe (arch is part of pattern)
+                    PATTERN="*win*${OS_ARCH}*.${RESOLVED_PACKAGING}"
+                else
+                    # Linux/macOS: *ubuntu*<wildcard>*x86_64*.deb
+                    PATTERN="*${OS_NAME}*${OS_ARCH}*.${RESOLVED_PACKAGING}"
+                fi
+                
+                echo "Auto-detected pattern: $PATTERN (OS=$OS_NAME, Arch=$OS_ARCH)"
+            else
+                # Platform was explicitly specified - use full pattern with specific version
+                echo "Platform was explicitly specified, using detailed pattern with version"
+                
+                OS_VERSION=$("$SCRIPTS_DIR/platform-format.sh" parse "$RESOLVED_PLATFORM" --os-version)
+                
+                echo "Platform components: OS=$OS_NAME, Version=$OS_VERSION, Arch=$OS_ARCH"
+                
+                # Build detailed pattern based on platform
+                if [ "$OS_NAME" = "win" ]; then
+                    # Windows: *win*64*.exe or *win*32*.exe
+                    PATTERN="*win*${OS_ARCH}*.${RESOLVED_PACKAGING}"
+                else
+                    # Linux/macOS: *ubuntu*22.04*x86_64*.deb
+                    if [ -n "$OS_VERSION" ]; then
+                        PATTERN="*${OS_NAME}*${OS_VERSION}*${OS_ARCH}*.${RESOLVED_PACKAGING}"
+                    else
+                        PATTERN="*${OS_NAME}*${OS_ARCH}*.${RESOLVED_PACKAGING}"
+                    fi
+                fi
+                
+                echo "Explicit pattern: $PATTERN"
+            fi
+        fi
+        
+        echo "ASSET_PATTERN=$PATTERN" >> $GITHUB_ENV
+        echo "::endgroup::"
+
+    - name: Download asset
+      id: download
+      shell: bash
+      run: |
+        SCRIPTS_DIR="${{ github.action_path }}/../scripts/shell/bash"
+        
+        echo "::group::Downloading release asset"
+        
+        # Prepare verbose flag
+        VERBOSE_FLAG=""
+        if [ "$VERBOSE" = "true" ]; then
+            VERBOSE_FLAG="--verbose"
+        fi
+        
+        echo "Repository: openDAQ/openDAQ"
+        echo "Version: $RESOLVED_VERSION"
+        echo "Pattern: $ASSET_PATTERN"
+        echo "Output directory: $OUTPUT_DIR"
+        
+        # Download asset using api-github-gh.sh
+        if ! "$SCRIPTS_DIR/api-github-gh.sh" openDAQ/openDAQ \
+            --download-asset \
+            --version "$RESOLVED_VERSION" \
+            --pattern "$ASSET_PATTERN" \
+            --output-dir "$OUTPUT_DIR" \
+            $VERBOSE_FLAG; then
+            echo "::error::Failed to download asset"
+            exit 1
+        fi
+        
+        echo "::endgroup::"
+        
+        echo "::group::Processing downloaded files"
+        
+        # Find downloaded files
+        if [ ! -d "$OUTPUT_DIR" ]; then
+            echo "::error::Output directory does not exist: $OUTPUT_DIR"
+            exit 1
+        fi
+        
+        # Get first file (sorted alphabetically)
+        ASSET_FILE=$(find "$OUTPUT_DIR" -type f -name "*.$RESOLVED_PACKAGING" | sort | head -n 1)
+        
+        if [ -z "$ASSET_FILE" ]; then
+            echo "::error::No asset file found in $OUTPUT_DIR"
+            exit 1
+        fi
+        
+        echo "Found asset: $ASSET_FILE"
+        
+        # Extract file information
+        ASSET_FILENAME=$(basename "$ASSET_FILE")
+        ASSET_DIR=$(dirname "$ASSET_FILE")
+        
+        echo "Asset filename: $ASSET_FILENAME"
+        echo "Asset directory: $ASSET_DIR"
+        
+        # Set outputs
+        echo "asset=$ASSET_FILE" >> $GITHUB_OUTPUT
+        echo "asset-dir=$ASSET_DIR" >> $GITHUB_OUTPUT
+        echo "asset-filename=$ASSET_FILENAME" >> $GITHUB_OUTPUT
+        
+        # Set env for next step
+        echo "ASSET_FILE=$ASSET_FILE" >> $GITHUB_ENV
+        
+        echo "::endgroup::"
+
+    - name: Finalize and compute checksums
+      id: finalize
+      shell: bash
+      run: |
+        echo "::group::Computing asset metadata"
+        
+        if [ ! -f "$ASSET_FILE" ]; then
+            echo "::error::Asset file not found: $ASSET_FILE"
+            exit 1
+        fi
+        
+        # Get file size
+        if command -v stat >/dev/null 2>&1; then
+            # Use stat (cross-platform compatible)
+            if stat --version 2>&1 | grep -q GNU; then
+                # GNU stat (Linux)
+                ASSET_SIZE=$(stat -c%s "$ASSET_FILE")
+            else
+                # BSD stat (macOS)
+                ASSET_SIZE=$(stat -f%z "$ASSET_FILE")
+            fi
+        else
+            # Fallback: use ls
+            ASSET_SIZE=$(ls -l "$ASSET_FILE" | awk '{print $5}')
+        fi
+        
+        echo "Asset size: $ASSET_SIZE bytes"
+        
+        # Compute SHA256 checksum
+        if command -v sha256sum >/dev/null 2>&1; then
+            ASSET_CHECKSUM=$(sha256sum "$ASSET_FILE" | awk '{print $1}')
+        elif command -v shasum >/dev/null 2>&1; then
+            ASSET_CHECKSUM=$(shasum -a 256 "$ASSET_FILE" | awk '{print $1}')
+        else
+            echo "::error::Neither sha256sum nor shasum found"
+            exit 1
+        fi
+        
+        echo "Asset checksum (SHA256): $ASSET_CHECKSUM"
+        
+        # Set outputs
+        echo "asset-filesize=$ASSET_SIZE" >> $GITHUB_OUTPUT
+        echo "asset-checksum=$ASSET_CHECKSUM" >> $GITHUB_OUTPUT
+        
+        echo "::endgroup::"
+        
+        echo "✅ Successfully downloaded release asset"
+        echo "   Version: $RESOLVED_VERSION"
+        echo "   Platform: $RESOLVED_PLATFORM"
+        echo "   Packaging: $RESOLVED_PACKAGING"
+        echo "   File: $ASSET_FILE"
+        echo "   Size: $ASSET_SIZE bytes"
+        echo "   SHA256: $ASSET_CHECKSUM"
