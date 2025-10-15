@@ -257,7 +257,7 @@ __daq_platform_parse() {
     
     if ! __daq_platform_is_valid "$platform"; then
         __daq_platform_error "Invalid platform alias: $platform"
-        exit 1
+        return 1
     fi
     
     local os_name=""
@@ -298,7 +298,7 @@ __daq_platform_parse() {
             ;;
         *)
             __daq_platform_error "Cannot parse platform: $platform"
-            exit 1
+            return 1
             ;;
     esac
     
@@ -327,13 +327,13 @@ daq_platform_validate() {
     
     if ! __daq_platform_is_valid "$platform"; then
         __daq_platform_verbose "Platform validation failed: $platform"
-        exit 1
+        return 1
     fi
     
     # If no flags, just validate and exit
     if [ $# -eq 0 ]; then
         __daq_platform_verbose "Platform is valid: $platform"
-        exit 0
+        return 0
     fi
     
     # Determine OS name from platform using case
@@ -363,41 +363,41 @@ daq_platform_validate() {
             [ "$os_name" = "ubuntu" ] || [ "$os_name" = "debian" ] || [ "$os_name" = "macos" ]
             result=$?
             __daq_platform_verbose "Check --is-unix for $platform: $([ $result -eq 0 ] && echo 'true' || echo 'false')"
-            exit $result
+            return $result
             ;;
         --is-linux)
             [ "$os_name" = "ubuntu" ] || [ "$os_name" = "debian" ]
             result=$?
             __daq_platform_verbose "Check --is-linux for $platform: $([ $result -eq 0 ] && echo 'true' || echo 'false')"
-            exit $result
+            return $result
             ;;
         --is-ubuntu)
             [ "$os_name" = "ubuntu" ]
             result=$?
             __daq_platform_verbose "Check --is-ubuntu for $platform: $([ $result -eq 0 ] && echo 'true' || echo 'false')"
-            exit $result
+            return $result
             ;;
         --is-debian)
             [ "$os_name" = "debian" ]
             result=$?
             __daq_platform_verbose "Check --is-debian for $platform: $([ $result -eq 0 ] && echo 'true' || echo 'false')"
-            exit $result
+            return $result
             ;;
         --is-macos)
             [ "$os_name" = "macos" ]
             result=$?
             __daq_platform_verbose "Check --is-macos for $platform: $([ $result -eq 0 ] && echo 'true' || echo 'false')"
-            exit $result
+            return $result
             ;;
         --is-win)
             [ "$os_name" = "win" ]
             result=$?
             __daq_platform_verbose "Check --is-win for $platform: $([ $result -eq 0 ] && echo 'true' || echo 'false')"
-            exit $result
+            return $result
             ;;
         *)
             __daq_platform_error "Unknown flag: $flag"
-            exit 1
+            return 1
             ;;
     esac
 }
@@ -426,6 +426,12 @@ daq_platform_parse() {
     
     local parsed_output
     parsed_output=$(__daq_platform_parse "$platform")
+    local parse_exit_code=$?
+    
+    # Check if parsing failed
+    if [ $parse_exit_code -ne 0 ]; then
+        return $parse_exit_code
+    fi
     
     # Determine if this is Windows (2 components) or Linux/macOS (3 components)
     local os_name os_version os_arch
@@ -447,7 +453,7 @@ daq_platform_parse() {
     if [ $# -eq 0 ]; then
         __daq_platform_verbose "Outputting all components"
         echo "$parsed_output"
-        exit 0
+        return 0
     fi
     
     # Output specific components
@@ -470,7 +476,7 @@ daq_platform_parse() {
                 ;;
             *)
                 __daq_platform_error "Unknown flag: $1"
-                exit 1
+                return 1
                 ;;
         esac
         shift
@@ -510,7 +516,7 @@ daq_platform_compose() {
             --os-name)
                 if [ $# -lt 2 ] || [ -z "${2:-}" ]; then
                     __daq_platform_error "--os-name requires a value"
-                    exit 1
+                    return 1
                 fi
                 os_name="$2"
                 __daq_platform_debug "Set os-name: $os_name"
@@ -519,7 +525,7 @@ daq_platform_compose() {
             --os-version)
                 if [ $# -lt 2 ] || [ -z "${2:-}" ]; then
                     __daq_platform_error "--os-version requires a value"
-                    exit 1
+                    return 1
                 fi
                 os_version="$2"
                 __daq_platform_debug "Set os-version: $os_version"
@@ -528,7 +534,7 @@ daq_platform_compose() {
             --os-arch)
                 if [ $# -lt 2 ] || [ -z "${2:-}" ]; then
                     __daq_platform_error "--os-arch requires a value"
-                    exit 1
+                    return 1
                 fi
                 os_arch="$2"
                 __daq_platform_debug "Set os-arch: $os_arch"
@@ -536,7 +542,7 @@ daq_platform_compose() {
                 ;;
             *)
                 __daq_platform_error "Unknown argument: $1"
-                exit 1
+                return 1
                 ;;
         esac
     done
@@ -544,12 +550,12 @@ daq_platform_compose() {
     # Validate required fields
     if [ -z "$os_name" ]; then
         __daq_platform_error "--os-name is required"
-        exit 1
+        return 1
     fi
     
     if [ -z "$os_arch" ]; then
         __daq_platform_error "--os-arch is required"
-        exit 1
+        return 1
     fi
     
     # Compose platform alias
@@ -560,7 +566,7 @@ daq_platform_compose() {
     else
         if [ -z "$os_version" ]; then
             __daq_platform_error "--os-version is required for non-Windows platforms"
-            exit 1
+            return 1
         fi
         platform="${os_name}${os_version}-${os_arch}"
         __daq_platform_verbose "Composing Linux/macOS platform: $platform"
@@ -569,7 +575,7 @@ daq_platform_compose() {
     # Validate composed platform
     if ! __daq_platform_is_valid "$platform"; then
         __daq_platform_error "Invalid platform composition: $platform"
-        exit 1
+        return 1
     fi
     
     __daq_platform_verbose "Successfully composed platform: $platform"
@@ -595,7 +601,7 @@ daq_platform_detect() {
     # Detect OS info
     local os_info
     if ! os_info=$(__daq_platform_detect_os_info); then
-        exit 1
+        return 1
     fi
     
     local os_name os_version
@@ -609,7 +615,7 @@ daq_platform_detect() {
     # Detect architecture
     local os_arch
     if ! os_arch=$(__daq_platform_detect_arch); then
-        exit 1
+        return 1
     fi
     
     __daq_platform_verbose "Detected architecture: $os_arch"
@@ -621,7 +627,7 @@ daq_platform_detect() {
     else
         if [ -z "$os_version" ]; then
             __daq_platform_error "Could not detect OS version for $os_name"
-            exit 1
+            return 1
         fi
         platform="${os_name}${os_version}-${os_arch}"
     fi
@@ -632,7 +638,7 @@ daq_platform_detect() {
     if ! __daq_platform_is_valid "$platform"; then
         __daq_platform_error "Detected platform $platform is not supported" \
             "Supported platforms can be listed with: --list-platforms"
-        exit 1
+        return 1
     fi
     
     __daq_platform_verbose "Platform is supported: $platform"
@@ -640,37 +646,6 @@ daq_platform_detect() {
 }
 
 # Main CLI entry point
-# Processes command-line arguments in two passes:
-#   1. Extract and process global flags (--verbose, --debug, --quiet)
-#   2. Route to appropriate command handler with remaining arguments
-# 
-# Arguments:
-#   Global flags (can appear anywhere):
-#     --verbose, -v   Enable verbose output
-#     --debug, -d     Enable debug output
-#     --quiet, -q     Suppress error messages
-#   
-#   Commands:
-#     detect
-#     validate <platform> [--is-*]
-#     parse <platform> [--os-name] [--os-version] [--os-arch]
-#     extract <platform> [--os-name] [--os-version] [--os-arch]
-#     compose --os-name <n> [--os-version <v>] --os-arch <a>
-#     --list-platforms
-# 
-# Output:
-#   Usage information if no arguments provided
-#   Otherwise delegates to appropriate command function
-# 
-# Exit code:
-#   0 - Success
-#   1 - Error (invalid command, missing arguments, etc.)
-# 
-# Examples:
-#   __daq_platform_main detect
-#   __daq_platform_main validate ubuntu20.04-arm64
-#   __daq_platform_main --verbose parse macos14-arm64
-#   __daq_platform_main --debug compose --os-name debian --os-version 11 --os-arch arm64
 __daq_platform_main() {
     # FIRST PASS: Extract global flags
     local remaining_args=()
@@ -700,7 +675,7 @@ __daq_platform_main() {
     __daq_platform_debug "Global flags parsed: verbose=$__DAQ_PLATFORM_VERBOSE debug=$__DAQ_PLATFORM_DEBUG quiet=$__DAQ_PLATFORM_QUIET"
     
     # SECOND PASS: Process commands with remaining arguments
-    set -- "${remaining_args[@]}"
+    set -- "${remaining_args[@]+"${remaining_args[@]}"}"
     
     if [ $# -eq 0 ]; then
         if [ "$__DAQ_PLATFORM_QUIET" -eq 0 ]; then
@@ -721,7 +696,7 @@ __daq_platform_main() {
             echo "Options:"
             echo "  --list-platforms    List all supported platforms"
         fi
-        exit 1
+        return 1
     fi
 
     __daq_platform_debug "Processing command: $1"
@@ -730,46 +705,48 @@ __daq_platform_main() {
         --list-platforms)
             __daq_platform_verbose "Listing all supported platforms"
             daq_platform_list
+            return $?
             ;;
         detect)
             shift
             daq_platform_detect "$@"
+            return $?
             ;;
         validate)
             shift
             daq_platform_validate "$@"
+            return $?
             ;;
         parse)
             shift
             daq_platform_parse "$@"
+            return $?
             ;;
         extract)
             shift
             daq_platform_extract "$@"
+            return $?
             ;;
         compose)
             shift
             daq_platform_compose "$@"
+            return $?
             ;;
         *)
             __daq_platform_error "Unknown command: $1"
-            exit 1
+            return 1
             ;;
     esac
 }
 
-# Flag to track if script was sourced (0=executed, 1=sourced)
+# Flag to track if script was sourced
 __DAQ_PLATFORM_SOURCED=0
 
 if [ -n "${BASH_VERSION:-}" ]; then
-    # Bash: Compare script path with invocation path
-    # BASH_SOURCE[0] = script path, $0 = invocation path
     if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
         __DAQ_PLATFORM_SOURCED=1
     fi
 elif [ -n "${ZSH_VERSION:-}" ]; then
-    # Zsh: Use prompt expansion to get script name
-    # %N expands to script/function name
     __DAQ_PLATFORM_SCRIPT_PATH="${(%):-%N}"
     if [ "$__DAQ_PLATFORM_SCRIPT_PATH" != "${0}" ]; then
         __DAQ_PLATFORM_SOURCED=1
@@ -779,4 +756,5 @@ fi
 # Run main only if not sourced
 if [ "$__DAQ_PLATFORM_SOURCED" -eq 0 ]; then
     __daq_platform_main "$@"
+    exit $?
 fi

@@ -3,10 +3,8 @@ name: Test Bash Framework
 on:
   push:
     paths: [ 'scripts-demo/**', 'tests/shell/bash/**' ]
-    paths-ignore: [ 'tests/shell/bash/suites/**' ]
   pull_request:
     paths: [ 'scripts-demo/**', 'tests/shell/bash/**' ]
-    paths-ignore: [ 'tests/shell/bash/suites/**' ]
   workflow_dispatch:
 
 jobs:

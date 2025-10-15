@@ -2,9 +2,9 @@ name: Test Bash Scripts
 
 on:
   push:
-    paths-ignore: [ 'docs/**', '**/*.md' ]
+    paths: [ 'scripts/**', 'tests/shell/bash/**' ]
   pull_request:
-    paths-ignore: [ 'docs/**', '**/*.md' ]
+    paths: [ 'scripts/**', 'tests/shell/bash/**' ]
   workflow_dispatch:
 
 jobs:
