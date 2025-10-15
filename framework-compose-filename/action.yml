@@ -1,0 +1,294 @@
+name: 'Compose OpenDAQ Package Filename'
+description: 'Compose OpenDAQ installation package filename from version, platform, and packaging format'
+
+inputs:
+  version:
+    description: 'OpenDAQ version (if not set, resolves to latest from openDAQ/openDAQ)'
+    required: false
+  platform:
+    description: 'Target platform (if not set, auto-detected)'
+    required: false
+  packaging:
+    description: 'Packaging format for cpack (if not set, uses runner OS name)'
+    required: false
+
+outputs:
+  filename:
+    description: 'Composed package filename'
+    value: ${{ steps.compose.outputs.filename }}
+  version:
+    description: 'Resolved version (full)'
+    value: ${{ steps.resolve-version.outputs.version }}
+  version-major:
+    description: 'Version major component'
+    value: ${{ steps.parse-components.outputs.version-major }}
+  version-minor:
+    description: 'Version minor component'
+    value: ${{ steps.parse-components.outputs.version-minor }}
+  version-patch:
+    description: 'Version patch component'
+    value: ${{ steps.parse-components.outputs.version-patch }}
+  version-suffix:
+    description: 'Version suffix (rc or empty)'
+    value: ${{ steps.parse-components.outputs.version-suffix }}
+  version-hash:
+    description: 'Version hash (or empty)'
+    value: ${{ steps.parse-components.outputs.version-hash }}
+  platform:
+    description: 'Resolved platform (full)'
+    value: ${{ steps.resolve-platform.outputs.platform }}
+  platform-os-name:
+    description: 'Platform OS name'
+    value: ${{ steps.parse-components.outputs.platform-os-name }}
+  platform-os-version:
+    description: 'Platform OS version (empty for Windows)'
+    value: ${{ steps.parse-components.outputs.platform-os-version }}
+  platform-os-arch:
+    description: 'Platform OS architecture'
+    value: ${{ steps.parse-components.outputs.platform-os-arch }}
+  packaging:
+    description: 'Resolved packaging format'
+    value: ${{ steps.resolve-packaging.outputs.packaging }}
+
+runs:
+  using: composite
+  steps:
+    - name: Init shell scripts
+      id: shell-scripts
+      shell: bash
+      env:
+        OPENDAQ_ACTIONS_SCRIPS_DIR: "${{ github.action_path }}/../scripts/shell/bash"
+        OPENDAQ_GH_API_CACHE_DIR: "${{ runner.temp }}"
+      run: |
+        dirs=(
+          "OPENDAQ_ACTIONS_SCRIPS_DIR" 
+          "OPENDAQ_GH_API_CACHE_DIR"
+        )
+        for dir_name in "${dirs[@]}"; do
+          # Get current value via indirect expansion
+          dir_value="${!dir_name}"
+
+          # Normalize path for Windows (convert to Unix-style)
+          if command -v cygpath >/dev/null 2>&1; then
+            dir_value="$(cygpath "$dir_value")"
+          fi
+
+          # Check if directory exists
+          if [ ! -d "$dir_value" ]; then
+            echo "❌ Error: directory not found at '$dir_value'" >&2
+            exit 1
+          fi
+
+          # Resolve absolute path
+          dir_value="$(cd "$dir_value" >/dev/null 2>&1 && pwd)"
+          echo "🧭 Normalized dir $dir_name=$dir_value"
+          
+          # Assign back via indirect expansion
+          export "$dir_name"="$dir_value"
+
+        done
+
+        # Normalize path for Windows (convert to Unix-style)
+        if command -v cygpath >/dev/null 2>&1; then
+          OPENDAQ_ACTIONS_SCRIPS_DIR="$(cygpath "$OPENDAQ_ACTIONS_SCRIPS_DIR")"
+        fi
+
+        # Check if directory exists
+        if [ ! -d "$OPENDAQ_ACTIONS_SCRIPS_DIR" ]; then
+          echo "❌ Error: scripts directory not found at '$OPENDAQ_ACTIONS_SCRIPS_DIR'" >&2
+          exit 1
+        fi
+
+        # Resolve absolute path (remove ../ segments)
+        OPENDAQ_ACTIONS_SCRIPS_DIR="$(cd "$OPENDAQ_ACTIONS_SCRIPS_DIR" >/dev/null 2>&1 && pwd)"
+        echo "🧭 Normalized scripts dir: $OPENDAQ_ACTIONS_SCRIPS_DIR"
+
+        # List of scripts that must be executable
+        scripts=(
+          "version-format.sh"
+          "platform-format.sh"
+          "packaging-format.sh"
+          "api-github-gh.sh"
+        )
+
+        # Iterate and apply +x with error handling
+        for rel_path in "${scripts[@]}"; do
+          script_path="${OPENDAQ_ACTIONS_SCRIPS_DIR}/${rel_path}"
+
+          if [ ! -f "$script_path" ]; then
+            echo "❌ Error: missing script '$script_path'" >&2
+            exit 1
+          fi
+
+          if ! chmod +x "$script_path"; then
+            echo "❌ Error: failed to chmod +x '$script_path'" >&2
+            exit 1
+          fi
+
+          echo "✅ Marked as executable: $rel_path"
+        done
+
+        # Export normalized directory path to step output
+        echo "dir=$OPENDAQ_ACTIONS_SCRIPS_DIR" >> "$GITHUB_OUTPUT"
+        echo "tmp=$OPENDAQ_GH_API_CACHE_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve Version
+      id: resolve-version
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        OPENDAQ_GH_API_GITHUB_REPO: openDAQ/openDAQ
+        OPENDAQ_GH_API_CACHE_DIR: ${{ steps.shell-scripts.outputs.tmp }}
+        OPENDAQ_ACTIONS_SCRIPS_DIR: ${{ steps.shell-scripts.outputs.dir }}
+        OPENDAQ_FRAMEWORK_VERSION: ${{ inputs.version }}
+      run: |
+        if [ -z "$OPENDAQ_FRAMEWORK_VERSION" ] || [ "$OPENDAQ_FRAMEWORK_VERSION" = "latest" ]; then
+          echo "🔍 No version provided, resolving latest from openDAQ/openDAQ"
+          
+          # Get latest version using GitHub API CLI
+          version=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/api-github-gh.sh" --version latest)
+          
+          if [ -z "$version" ]; then
+            echo "❌ Error: Failed to resolve latest version" >&2
+            exit 1
+          fi
+          
+          echo "✅ Resolved latest version: $version"
+        else
+          echo "🧭 Validating provided version: $OPENDAQ_FRAMEWORK_VERSION"
+          
+          # Validate version using CLI
+          if "${OPENDAQ_ACTIONS_SCRIPS_DIR}/version-format.sh" validate "$OPENDAQ_FRAMEWORK_VERSION"; then
+            version="$OPENDAQ_FRAMEWORK_VERSION"
+            echo "✅ Version validated: $version"
+          else
+            echo "❌ Error: Invalid version format: $OPENDAQ_FRAMEWORK_VERSION" >&2
+            exit 1
+          fi
+        fi
+        
+        echo "version=$version" >> $GITHUB_OUTPUT
+    
+    - name: Resolve Platform
+      id: resolve-platform
+      shell: bash
+      env:
+        OPENDAQ_ACTIONS_SCRIPS_DIR: ${{ steps.shell-scripts.outputs.dir }}
+        OPENDAQ_FRAMEWORK_PLATFORM: ${{ inputs.platform }}
+      run: |
+        if [ -n "$OPENDAQ_FRAMEWORK_PLATFORM" ]; then
+          echo "🧭 Validating provided platform: $OPENDAQ_FRAMEWORK_PLATFORM"
+          
+          # Validate platform using CLI
+          if "${OPENDAQ_ACTIONS_SCRIPS_DIR}/platform-format.sh" validate "$OPENDAQ_FRAMEWORK_PLATFORM"; then
+            platform="$OPENDAQ_FRAMEWORK_PLATFORM"
+            echo "✅ Platform validated: $platform"
+          else
+            echo "❌ Error: Invalid platform format: $OPENDAQ_FRAMEWORK_PLATFORM" >&2
+            exit 1
+          fi
+        else
+          echo "🔍 No platform provided, detecting from runner"
+          
+          # Detect platform using CLI
+          platform=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/platform-format.sh" detect)
+          
+          if [ -z "$platform" ]; then
+            echo "❌ Error: Failed to detect platform" >&2
+            exit 1
+          fi
+          
+          echo "✅ Platform detected: $platform"
+        fi
+        
+        echo "platform=$platform" >> $GITHUB_OUTPUT
+    
+    - name: Resolve Packaging Format
+      id: resolve-packaging
+      shell: bash
+      env:
+        OPENDAQ_ACTIONS_SCRIPS_DIR: ${{ steps.shell-scripts.outputs.dir }}
+        OPENDAQ_FRAMEWORK_PACKAGING: ${{ inputs.packaging }}
+        OPENDAQ_RUNNER_OS: ${{ steps.resolve-platform.outputs.platform }}
+      run: |        
+        if [ -n "$OPENDAQ_FRAMEWORK_PACKAGING" ]; then
+          echo "🧭 Using provided packaging format (cpack generator): $OPENDAQ_FRAMEWORK_PACKAGING"
+          
+          # Detect packaging from CPack generator using CLI
+          packaging=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/packaging-format.sh" detect --cpack-generator "$OPENDAQ_FRAMEWORK_PACKAGING")
+          
+          if [ -z "$packaging" ]; then
+            echo "❌ Error: Failed to determine packaging format for CPack generator: $OPENDAQ_FRAMEWORK_PACKAGING" >&2
+            exit 1
+          fi
+          
+          echo "✅ Resolved packaging from cpack: $packaging"
+        else
+          echo "🔍 No packaging format provided, deriving from runner OS: $OPENDAQ_RUNNER_OS"
+          
+          # Detect packaging from OS name using CLI
+          packaging=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/packaging-format.sh" detect --os-name "$OPENDAQ_RUNNER_OS")
+          
+          if [ -z "$packaging" ]; then
+            echo "❌ Error: Failed to determine packaging format for OS: $OPENDAQ_RUNNER_OS" >&2
+            exit 1
+          fi
+          
+          echo "✅ Derived packaging from OS: $packaging"
+        fi
+        
+        echo "packaging=$packaging" >> $GITHUB_OUTPUT
+    
+    - name: Compose Filename
+      id: compose
+      shell: bash
+      env:
+        OPENDAQ_FRAMEWORK_VERSION: ${{ steps.resolve-version.outputs.version }}
+        OPENDAQ_FRAMEWORK_PLATFORM: ${{ steps.resolve-platform.outputs.platform }}
+        OPENDAQ_FRAMEWORK_PACKAGING: ${{ steps.resolve-packaging.outputs.packaging }}
+      run: |
+        filename="opendaq-${OPENDAQ_FRAMEWORK_VERSION}-${OPENDAQ_FRAMEWORK_PLATFORM}.${OPENDAQ_FRAMEWORK_PACKAGING}"
+        echo "✅ Composed filename: $filename"
+        echo "filename=$filename" >> $GITHUB_OUTPUT
+    
+    - name: Parse Components
+      id: parse-components
+      shell: bash
+      env:
+        OPENDAQ_ACTIONS_SCRIPS_DIR: ${{ steps.shell-scripts.outputs.dir }}
+        OPENDAQ_FRAMEWORK_VERSION: ${{ steps.resolve-version.outputs.version }}
+        OPENDAQ_FRAMEWORK_PLATFORM: ${{ steps.resolve-platform.outputs.platform }}
+      run: |
+        echo "🔍 Parsing version components from: $OPENDAQ_FRAMEWORK_VERSION"
+        
+        # Parse version components
+        version_major=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/version-format.sh" parse "$OPENDAQ_FRAMEWORK_VERSION" --major)
+        version_minor=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/version-format.sh" parse "$OPENDAQ_FRAMEWORK_VERSION" --minor)
+        version_patch=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/version-format.sh" parse "$OPENDAQ_FRAMEWORK_VERSION" --patch)
+        version_suffix=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/version-format.sh" parse "$OPENDAQ_FRAMEWORK_VERSION" --suffix)
+        version_hash=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/version-format.sh" parse "$OPENDAQ_FRAMEWORK_VERSION" --hash)
+        
+        echo "version-major=$version_major" >> $GITHUB_OUTPUT
+        echo "version-minor=$version_minor" >> $GITHUB_OUTPUT
+        echo "version-patch=$version_patch" >> $GITHUB_OUTPUT
+        echo "version-suffix=$version_suffix" >> $GITHUB_OUTPUT
+        echo "version-hash=$version_hash" >> $GITHUB_OUTPUT
+        
+        echo "✅ Version: $version_major.$version_minor.$version_patch${version_suffix:+-}${version_suffix}${version_hash:+-}${version_hash}"
+        
+        echo "🔍 Parsing platform components from: $OPENDAQ_FRAMEWORK_PLATFORM"
+        
+        # Parse platform components
+        platform_os_name=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/platform-format.sh" parse "$OPENDAQ_FRAMEWORK_PLATFORM" --os-name)
+        platform_os_version=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/platform-format.sh" parse "$OPENDAQ_FRAMEWORK_PLATFORM" --os-version)
+        platform_os_arch=$("${OPENDAQ_ACTIONS_SCRIPS_DIR}/platform-format.sh" parse "$OPENDAQ_FRAMEWORK_PLATFORM" --os-arch)
+        
+        echo "platform-os-name=$platform_os_name" >> $GITHUB_OUTPUT
+        echo "platform-os-version=$platform_os_version" >> $GITHUB_OUTPUT
+        echo "platform-os-arch=$platform_os_arch" >> $GITHUB_OUTPUT
+        
+        if [ -n "$platform_os_version" ]; then
+          echo "✅ Platform: $platform_os_name $platform_os_version ($platform_os_arch)"
+        else
+          echo "✅ Platform: $platform_os_name ($platform_os_arch)"
+        fi
