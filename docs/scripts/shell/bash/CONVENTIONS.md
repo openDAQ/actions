@@ -78,6 +78,31 @@ __daq_version_usage      # Usage display
 - Typically for logging, errors, help text
 - May be shared across functions in same module
 
+### API Size Guidelines
+
+The number of public functions should match the module's complexity:
+
+**Minimal API (2-3 functions)**:
+- Used for simple, focused modules
+- Typically single-purpose utilities
+- Example: `packaging-format.sh` (2 detect functions)
+- Pattern: One function per input type
+
+**Standard API (4-7 functions)**:
+- Used for moderate complexity modules
+- Multiple operations on same data type
+- Example: `version-format.sh` (compose, parse, validate, extract)
+- Example: `platform-format.sh` (detect, parse, extract, compose, list, type checks)
+- Pattern: CRUD-like operations + utilities
+
+**Extended API (8+ functions)**:
+- Used for complex, feature-rich modules
+- Multiple data types or operations
+- May include sub-modules or specialized functions
+- Pattern: Core operations + convenience wrappers + utilities
+
+**Principle**: Start minimal, expand only when needed. Don't add functions "just in case".
+
 ## Variable Naming
 
 ### Public Constants
@@ -124,67 +149,6 @@ __DAQ_VERSION_SOURCED       # Source detection flag
 - ⚠️  **May change without notice**
 - ❌ **Do not reference directly**
 
-### Match Result Variables
-
-**Pattern**: `__MATCH_<COMPONENT>`
-
-**Examples**:
-```bash
-__MATCH_PREFIX      # Matched prefix (v or empty)
-__MATCH_MAJOR       # Matched major version
-__MATCH_MINOR       # Matched minor version
-__MATCH_PATCH       # Matched patch version
-__MATCH_SUFFIX      # Matched suffix (rc or empty)
-__MATCH_HASH        # Matched git hash
-```
-
-**Rules**:
-- Used for storing regex match results
-- Always start with `__MATCH_`
-- Component name in uppercase
-- Cleared at start of matching function
-
-**Usage**:
-```bash
-__daq_version_match "$version"
-# Now __MATCH_MAJOR, __MATCH_MINOR, etc. are populated
-echo "$__MATCH_MAJOR"
-```
-
-### Configuration Arrays
-
-For module configuration (supported versions, formats, etc.):
-
-**If configuration is part of public API:**
-```bash
-readonly OPENDAQ_<MODULE>_<CONFIG>=("value1" "value2")
-```
-
-**If configuration is internal:**
-```bash
-readonly __DAQ_<MODULE>_<CONFIG>=("value1" "value2")
-```
-
-**Best practices:**
-- Always use `readonly` for configuration that shouldn't change at runtime
-- Use public prefix (`OPENDAQ_`) if users may need to read these values
-- Use private prefix (`__DAQ_`) if values are purely internal
-- Document which values are supported in README.md
-
-**Examples from platform-format.sh:**
-
-```bash
-# Private configuration (internal use only)
-readonly __DAQ_PLATFORM_UBUNTU_VERSIONS=("20.04" "22.04" "24.04")
-readonly __DAQ_PLATFORM_DEBIAN_VERSIONS=("8" "9" "10" "11" "12")
-readonly __DAQ_PLATFORM_LINUX_ARCHS=("arm64" "x86_64")
-
-# Alternative: Public configuration (if users need to read)
-readonly OPENDAQ_PLATFORM_UBUNTU_VERSIONS=("20.04" "22.04" "24.04")
-```
-
-**Note:** In platform-format.sh, these arrays use private prefix (`__DAQ_`) but could be made public (`OPENDAQ_`) if there's a use case for external code to read supported versions.
-
 ## Module Naming
 
 ### Script Files
@@ -202,10 +166,15 @@ api-github-gh.sh       # GitHub API utilities
 **Rules**:
 - Module name describes domain
 - Purpose describes what module does
+- Gerund forms (e.g., `packaging`, `testing`) are acceptable when more natural than base form
+  - Use gerund when describing an ongoing process or activity
+  - Example: `packaging-format.sh` (the activity of packaging)
+  - Example: `testing-utils.sh` (utilities for testing)
+  - Base form is still preferred for concrete nouns (e.g., `version`, `platform`)
 - Use dash separators (kebab-case)
 - Always `.sh` extension
 - All lowercase
-
+`
 ### Module Prefixes
 
 Each script module uses consistent prefix:
@@ -214,7 +183,7 @@ Each script module uses consistent prefix:
 |--------|--------|------------------|
 | `version-format.sh` | `daq_version_` | `daq_version_compose` |
 | `platform-format.sh` | `daq_platform_` | `daq_platform_detect` |
-| `packaging-format.sh` | `daq_package_` | `daq_package_compose` |
+| `packaging-format.sh` | `daq_packaging_` | `daq_packaging_detect_from_cpack` |
 | `api-github-gh.sh` | `daq_gh_` | `daq_gh_release_list` |
 
 ## Namespace Protection
@@ -253,98 +222,68 @@ daq_platform_detect
 daq_package_compose --version "$version" --platform "$platform"
 ```
 
-## Examples
+## Module Design Principles
 
-### Complete Module Example
+### Single Responsibility
+
+Each module should have one clear purpose:
+
+- âœ… `version-format.sh` - handles version strings
+- âœ… `platform-format.sh` - handles platform identifiers
+- âœ… `packaging-format.sh` - handles package extensions
+- âŒ `utils.sh` - too generic, unclear purpose
+
+### Focused API
+
+Public API should be:
+- **Minimal**: Only functions that external code needs
+- **Consistent**: Similar naming and behavior across functions
+- **Documented**: Every public function in API.md
+- **Stable**: Changes require major version bump
+
+### Composability
+
+Modules should work well together:
 
 ```bash
-#!/usr/bin/env bash
-# example-module.sh - Example module following conventions
+# âœ… Good - modules compose naturally
+source version-format.sh
+source platform-format.sh
+source packaging-format.sh
 
-# Public constant
-readonly OPENDAQ_EXAMPLE_FORMATS=("format1" "format2")
+version=$(daq_version_compose --major 1 --minor 2 --patch 3)
+platform=$(daq_platform_detect)
+ext=$(daq_packaging_detect_from_os "ubuntu-latest")
 
-# Private variables
-__DAQ_EXAMPLE_VERBOSE=0
-__MATCH_VALUE=""
-
-# Private utility function
-__daq_example_log() {
-    [ "$__DAQ_EXAMPLE_VERBOSE" -eq 1 ] && echo "[example] $*" >&2
-}
-
-# Private implementation function
-__daq_example_internal_logic() {
-    local input="$1"
-    # Implementation details
-    __MATCH_VALUE="$input"
-}
-
-# Public API function
-daq_example_process() {
-    local input="$1"
-    
-    __daq_example_log "Processing: $input"
-    __daq_example_internal_logic "$input"
-    
-    echo "$__MATCH_VALUE"
-}
-
-# Public API function
-daq_example_validate() {
-    local value="$1"
-    
-    for format in "${OPENDAQ_EXAMPLE_FORMATS[@]}"; do
-        if [ "$value" = "$format" ]; then
-            return 0
-        fi
-    done
-    
-    return 1
-}
+package="opendaq-${version}-${platform}.${ext}"
 ```
 
-### Using the Module
+### Independence
 
+Modules should not depend on each other:
+- Each module can be sourced independently
+- No hard dependencies between modules
+- Shared prefixes prevent naming conflicts
+- Each module has its own namespace
+
+### Evolution
+
+Modules can grow, but should remain focused:
+
+**Initial version** (minimal):
 ```bash
-#!/usr/bin/env bash
-# my-script.sh - Using example module
-
-source example-module.sh
-
-# Use public API
-result=$(daq_example_process "input")
-
-if daq_example_validate "$result"; then
-    echo "Valid: $result"
-fi
-
-# ❌ DON'T use private functions/variables
-# __daq_example_internal_logic "data"  # BAD
-# __DAQ_EXAMPLE_VERBOSE=1              # BAD
-
-# ✅ DO use public API only
-daq_example_process "data"              # GOOD
+# packaging-format.sh v1.0
+daq_packaging_detect_from_cpack()
+daq_packaging_detect_from_os()
 ```
 
-## Migration Guide
-
-### From Generic Names
-
-If you have existing scripts with generic names:
-
-**Before**:
+**Future version** (extended, if needed):
 ```bash
-compose_version() { ... }
-parse_version() { ... }
-FORMATS=("X.Y.Z")
-```
-
-**After**:
-```bash
-daq_version_compose() { ... }
-daq_version_parse() { ... }
-readonly OPENDAQ_VERSION_FORMATS=("X.Y.Z")
+# packaging-format.sh v2.0
+daq_packaging_detect_from_cpack()
+daq_packaging_detect_from_os()
+daq_packaging_list_generators()      # New: list supported generators
+daq_packaging_validate_generator()   # New: validate generator name
 ```
 
 ### Creating New Module
@@ -384,5 +323,6 @@ Following these conventions provides:
 
 ## See Also
 
-- [version-format.sh](version-format/README.md) - Example implementation
+- [packaginh-format.sh](packaging-format/README.md) - Example implementation
 - [platform-format.sh](platform-format/README.md) - Example implementation
+- [version-format.sh](version-format/README.md) - Example implementation
