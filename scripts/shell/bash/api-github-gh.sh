@@ -997,7 +997,7 @@ __daq_api_gh_main() {
             ;;
         download-asset)
             # Check required --output-dir
-            if [[ -z "$__DAQ_GH_API_OUTPUT_DIR" ]]; then
+            if [[ -z "${__DAQ_GH_API_OUTPUT_DIR:-}" ]]; then
                 __daq_api_gh_error "--output-dir is required for --download-asset"
                 return 1
             fi
@@ -1029,7 +1029,7 @@ __daq_api_gh_main() {
                 __daq_api_gh_error "--run-id is required for --download-artifact"
                 return 1
             fi
-            if [[ -z "$__DAQ_GH_API_OUTPUT_DIR" ]]; then
+            if [[ -z "${__DAQ_GH_API_OUTPUT_DIR:-}" ]]; then
                 __daq_api_gh_error "--output-dir is required for --download-artifact"
                 return 1
             fi

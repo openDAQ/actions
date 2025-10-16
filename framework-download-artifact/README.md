@@ -100,3 +100,6 @@ outputs:
     sudo dpkg -i ${{ steps.download.outputs.artifact }}
     echo "Installed $(dpkg -l | grep opendaq)"
 ```
+
+## See Also
+- [README.md](./../README.md) - Actions overview

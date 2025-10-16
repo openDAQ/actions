@@ -76,6 +76,32 @@ chmod +x suites/test-myfeature.sh
     --include-test "test-myfeature*"
 ```
 
+## Using Test Hooks
+
+Add setup and teardown hooks to prepare/cleanup your tests:
+
+```bash
+# Add to your test suite file
+test_setup() {
+    # Runs before EACH test
+    TEMP_FILE="/tmp/test-$$.txt"
+    echo "test data" > "${TEMP_FILE}"
+}
+
+test_teardown() {
+    # Runs after EACH test (even if test fails)
+    rm -f "${TEMP_FILE}"
+}
+
+test-mytest-with-hooks() {
+    # TEMP_FILE is ready to use
+    local content=$(cat "${TEMP_FILE}")
+    assert_equals "test data" "${content}"
+}
+```
+
+**Learn more:** See [HOOKS.md](HOOKS.md) for complete guide with examples.
+
 ## Key Features
 
 ✅ **Automatic Discovery** - Just create `test-*.sh` files with `test-*()` functions
@@ -84,6 +110,7 @@ chmod +x suites/test-myfeature.sh
 ✅ **Fail Fast** - Stop on first failure
 ✅ **Multiple Modes** - List, dry-run, or execute
 ✅ **Shell Support** - bash 3.2+ and zsh
+✅ **Test Hooks** - Setup/teardown for each test
 
 ## Common Patterns
 

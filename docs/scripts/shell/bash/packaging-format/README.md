@@ -217,5 +217,6 @@ type daq_packaging_detect_from_os
 
 ## See Also
 
-- [API.md](API.md) - Complete API reference
-- [CONVENTIONS.md](../CONVENTIONS.md) - Script naming conventions
+- [API.md](./API.md) - Complete API reference
+- [CONVENTIONS.md](./../CONVENTIONS.md) - Common naming conventions for OpenDAQ bash scripts.
+- [README.md](./../../../../../README.md) - Actions overview

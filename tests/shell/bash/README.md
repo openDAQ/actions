@@ -11,6 +11,7 @@ A flexible and powerful test runner for bash and zsh scripts with support for fi
 - 🚀 **Fail-Fast Mode**: Stop on first failure for faster feedback
 - 🔍 **Discovery Modes**: List suites, tests, and see what will run
 - 📝 **Verbose Logging**: Optional detailed output for debugging
+- 🪝 **Test Hooks**: Setup and teardown functions for each test
 
 ## Requirements
 
@@ -117,6 +118,40 @@ test-example-another() {
 Examples:
 - Suite: `test-integration.sh` → Tests: `test-api-call()`, `test-database-connection()`
 - Suite: `test-unit.sh` → Tests: `test-parse-json()`, `test-validate-input()`
+
+### Using Test Hooks
+
+Add optional setup and teardown hooks to your test suite:
+
+```bash
+#!/usr/bin/env bash
+# test-example.sh
+
+# Runs before EACH test
+test_setup() {
+    TEMP_FILE="/tmp/test-$$.txt"
+    echo "test data" > "${TEMP_FILE}"
+}
+
+# Runs after EACH test (even if test fails)
+test_teardown() {
+    rm -f "${TEMP_FILE}"
+}
+
+test-example-with-hooks() {
+    # TEMP_FILE is created by test_setup
+    local content=$(cat "${TEMP_FILE}")
+    [[ "${content}" == "test data" ]]
+}
+```
+
+**Key points:**
+- `test_setup()` runs before each test (optional)
+- `test_teardown()` runs after each test, even if it fails (optional)
+- Setup failure causes test to be skipped
+- Each test gets fresh environment (subshell isolation)
+
+**Learn more:** See [HOOKS.md](HOOKS.md) for complete guide with examples.
 
 ## Usage
 
@@ -446,6 +481,16 @@ These functions are available for use in test suites:
 - Check bash version: `bash --version` (need 3.2+)
 - Try running in bash explicitly: `bash ./test-runner.sh ...`
 - Check for bash-specific syntax in your tests
+
+## See Also
+
+- [QUICKSTART.md](QUICKSTART.md) - Quick start guide
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and design
+- [IMPLEMENTATION.md](IMPLEMENTATION.md) - Implementation details and status
+- [HOOKS.md](HOOKS.md) - Test hooks guide (setup/teardown)
+- [WINDOWS.md](WINDOWS.md) - Windows support and path conversion
+- [CI.md](CI.md) - CI/CD integration guide
+- [INDEX.md](INDEX.md) - Documentation index
 
 ## Contributing
 

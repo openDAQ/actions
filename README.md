@@ -39,7 +39,7 @@ Actions/
 │           ├── platform-format.sh    # Platform detection/formatting
 │           └── version-format.sh     # Version formatting utilities
 │
-├── scripts-demo/               # Common scripts for framework selftests
+├── scripts-demo/               # Common scripts for framework self tests
 │   └── shell/                  # Shell self testing scripts
 │       └── bash/               # Bash self testing scripts
 │           └── math-utils.sh         # Math utilities (example)
@@ -61,47 +61,21 @@ Actions/
 
 ## Actions
 
-### framework-compose-filename
+### [framework-compose-filename](./framework-compose-filename/README.md)
 
 Composes the filename for openDAQ installation packages based on version, platform, and format.
 
-**Inputs:**
-- `version`: Package version
-- `platform`: Target platform (linux, windows, macos)
-- `architecture`: CPU architecture
-- `format`: Package format (deb, rpm, msi, pkg, etc.)
-
-**Outputs:**
-- `filename`: Composed package filename
-
-### framework-download-artifact
+### [framework-download-artifact](./framework-download-artifact/README.md)
 
 Downloads an artifact from a specific workflow run.
 
-**Inputs:**
-- `run-id`: Workflow run ID
-- `artifact-name`: Name of the artifact
-- `artifact-filename`: Specific file to extract from artifact
-- `destination`: Download destination directory
-
-### framework-download-release
+### [framework-download-release](./framework-download-release/README.md)
 
 Downloads an asset from a GitHub release.
 
-**Inputs:**
-- `version`: Release version (tag)
-- `asset-name`: Asset filename to download
-- `destination`: Download destination directory
-- `token`: GitHub token for authentication
-
-### framework-install-package
+### [framework-install](./framework-install/README.md)
 
 Installs or extracts a downloaded package.
-
-**Inputs:**
-- `file-path`: Path to package file
-- `package-type`: Package type (deb, rpm, msi, pkg, zip, tar.gz)
-- `install-options`: Additional installation options
 
 ## Scripts
 
@@ -220,8 +194,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./framework-compose-filename
         with:
-          version: '1.0.0'
-          platform: 'linux'
+          version: '3.20.4'
+          platform: 'ubuntu20.04-x86_64'
       # Validate outputs
 ```
 
