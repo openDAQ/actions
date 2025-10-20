@@ -3,11 +3,17 @@
 ## Installation
 
 ```bash
-# Set scripts directory environment variable
-export DAQ_TESTS_SCRIPTS_DIR="/path/to/your/scripts"
+# Option 1: Set environment variables (recommended)
+export OPENDAQ_TESTS_SCRIPTS_DIR="/path/to/your/scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./suites"
+./test-runner.sh
 
-# Or pass it as argument when running tests
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --scripts-dir /path/to/your/scripts
+# Option 2: Pass as command-line arguments
+./test-runner.sh --suites-dir ./suites --scripts-dir /path/to/your/scripts
+
+# Option 3: Mix environment variables and arguments
+export OPENDAQ_TESTS_SCRIPTS_DIR="/path/to/your/scripts"
+./test-runner.sh --suites-dir ./suites
 ```
 
 ## Run Tests
@@ -15,26 +21,24 @@ export DAQ_TESTS_SCRIPTS_DIR="/path/to/your/scripts"
 ```bash
 cd /your/project/path/tests/shell/bash
 
-# Set scripts directory (relative to test-runner.sh)
-export DAQ_TESTS_SCRIPTS_DIR="../../../scripts"
+# Set environment variables once (relative to test-runner.sh)
+export OPENDAQ_TESTS_SCRIPTS_DIR="../../../scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./suites"
 
 # Run all tests
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}"
+./test-runner.sh
 
 # Run with verbose output
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --verbose
+./test-runner.sh --verbose
 
 # Run specific suite
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" \
-    --include-test "test-basic*"
+./test-runner.sh --include-test "test-basic*"
 
 # Exclude slow tests
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" \
-    --exclude-test "*:test-*-slow"
+./test-runner.sh --exclude-test "*:test-*-slow"
 
 # Dry run to see what would execute
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" \
-    --dry-run --verbose
+./test-runner.sh --dry-run --verbose
 ```
 
 ## Create New Test Suite
@@ -46,9 +50,9 @@ cat > suites/test-myfeature.sh << 'EOF'
 # Test suite for my feature
 
 test-myfeature-basic() {
-    # Access scripts via DAQ_TESTS_SCRIPTS_DIR
-    source "${DAQ_TESTS_SCRIPTS_DIR}/shell/bash/my-script.sh"
-    
+    # Access scripts via __DAQ_TESTS_SCRIPTS_DIR (internal variable)
+    source "${__DAQ_TESTS_SCRIPTS_DIR}/shell/bash/my-script.sh"
+
     # Your test logic here
     if [[ "result" == "expected" ]]; then
         return 0  # Success
@@ -60,9 +64,9 @@ test-myfeature-basic() {
 
 test-myfeature-with-script() {
     # Execute script as command
-    local SCRIPT="${DAQ_TESTS_SCRIPTS_DIR}/shell/bash/my-script.sh"
+    local SCRIPT="${__DAQ_TESTS_SCRIPTS_DIR}/shell/bash/my-script.sh"
     local output=$($SCRIPT --arg value)
-    
+
     # Use assertions
     assert_equals "expected" "${output}"
 }
@@ -72,8 +76,7 @@ EOF
 chmod +x suites/test-myfeature.sh
 
 # Run your new tests
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" \
-    --include-test "test-myfeature*"
+./test-runner.sh --include-test "test-myfeature*"
 ```
 
 ## Using Test Hooks
@@ -116,12 +119,12 @@ test-mytest-with-hooks() {
 
 ### Run integration tests only
 ```bash
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --include-test "test-integration*"
+./test-runner.sh --include-test "test-integration*"
 ```
 
 ### Skip slow and flaky tests
 ```bash
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" \
+./test-runner.sh \
     --exclude-test "*:test-*-slow" \
     --exclude-test "*:test-*-flaky"
 ```
@@ -129,32 +132,33 @@ test-mytest-with-hooks() {
 ### CI/CD friendly
 ```bash
 # Stop on first failure for fast feedback
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --fail-fast true
+./test-runner.sh --fail-fast true
 
 # List what will run
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --list-tests-included
+./test-runner.sh --list-tests-included
 ```
 
 ## Environment Setup
 
 ```bash
-# Set scripts directory variable
-export DAQ_TESTS_SCRIPTS_DIR="../../../scripts"
+# Set environment variables once at the beginning
+export OPENDAQ_TESTS_SCRIPTS_DIR="../../../scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./suites"
 
-# Now can run with shorter commands
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}"
+# Now all commands work without any directory flags
+./test-runner.sh
+./test-runner.sh --verbose
+./test-runner.sh --include-test "test-basic*"
 ```
 
 ## Debugging
 
 ```bash
 # Verbose discovery
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --verbose --dry-run
+./test-runner.sh --verbose --dry-run
 
 # See what matches your pattern
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" \
-    --include-test "test-*:test-api*" \
-    --list-tests-included
+./test-runner.sh --include-test "test-*:test-api*" --list-tests-included
 ```
 
 ## See Full Documentation

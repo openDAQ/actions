@@ -7,7 +7,7 @@ Collection of reusable composite GitHub Actions for openDAQ project workflows.
 This repository contains:
 - **Composite Actions** (`*/action.yml`) - Reusable GitHub Actions for common workflows
 - **Shell Scripts** (`scripts/`) - Common scripts used by actions
-- **Shell Scripts Demo** (`scripts-demo/`) - Common scripts used by a sefl verification
+- **Shell Scripts Demo** (`scripts-demo/`) - Common scripts used by a self verification
 - **Tests** (`tests/`) - Test suites for validating scripts and framework functionality
 - **Tests Demo** (`tests-demo/`) - Test suites for self validating of local test framework functionality
 
@@ -83,9 +83,11 @@ Scripts in `scripts/` directory are self-contained and platform-aware.
 
 ### Script Development Guidelines
 
+See [Naming Conventions](docs/scripts/shell/bash/CONVENTIONS.md) for detailed coding standards.
+
 1. **Cross-platform compatibility**: Scripts should work on Linux, macOS, and Windows (Git Bash/Cygwin)
 2. **Self-contained**: No cross-dependencies between scripts
-3. **Environment variables**: Use `OPENDAQ_TESTS_SCRIPTS_DIR` for script location
+3. **Naming conventions**: Follow `daq_<module>_<action>` pattern for functions, `OPENDAQ_<MODULE>_*` for variables
 4. **Path normalization**: Handle Windows paths using provided utilities
 5. **Error handling**: Use `set -euo pipefail` for strict error handling
 
@@ -120,7 +122,7 @@ All scripts must have corresponding test suites in `tests/shell/bash/suites/`.
 # Create tests/shell/bash/suites/test-math-utils.sh
 ```
 
-See [Test Framework Documentation](tests/shell/bash/INDEX.md) for details.
+See [Test Framework Documentation](docs/tests/shell/bash/INDEX.md) for details.
 
 ### Framework Testing
 
@@ -213,14 +215,12 @@ For such actions, manual testing workflows are sufficient.
 ```bash
 cd tests/shell/bash
 
-# Set scripts directory
-export SCRIPTS_DIR="../../../scripts"
+# Set environment variables
+export OPENDAQ_TESTS_SCRIPTS_DIR="../../../scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./suites"
 
 # Run only script tests (e.g., math-utils)
-./test-runner.sh \
-  --suites-dir ./suites \
-  --scripts-dir "${SCRIPTS_DIR}" \
-  --include-test 'test-math-utils*'
+./test-runner.sh --include-test 'test-math-utils*'
 ```
 
 ### Test Framework Features
@@ -228,10 +228,12 @@ export SCRIPTS_DIR="../../../scripts"
 ```bash
 cd tests/shell/bash
 
+# Set environment variables
+export OPENDAQ_TESTS_SCRIPTS_DIR="../../../scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./suites"
+
 # Run demo suites
 ./test-runner.sh \
-  --suites-dir ./suites \
-  --scripts-dir "${SCRIPTS_DIR}" \
   --include-test 'test-basic*' \
   --include-test 'test-integration*' \
   --include-test 'test-advanced*' \
@@ -247,9 +249,12 @@ cd tests/shell/bash
 
 ## Environment Variables
 
-### Required Variables
+### Public Variables
 
-- `OPENDAQ_TESTS_SCRIPTS_DIR` - Path to scripts directory (set in tests)
+- `OPENDAQ_TESTS_SCRIPTS_DIR` - Path to scripts directory (initializes `__DAQ_TESTS_SCRIPTS_DIR`)
+- `OPENDAQ_TESTS_SUITES_DIR` - Path to suites directory (initializes `__DAQ_TESTS_SUITES_DIR`)
+
+**Note**: When these environment variables are set, the corresponding command-line flags (`--scripts-dir`, `--suites-dir`) are optional.
 
 ### Usage in Tests
 
@@ -319,12 +324,15 @@ Tests the test runner framework on multiple shells and platforms.
 
 ## Documentation
 
-- **Test Framework**: [tests/shell/bash/INDEX.md](tests/shell/bash/INDEX.md)
-- **Quick Start**: [tests/shell/bash/QUICKSTART.md](tests/shell/bash/QUICKSTART.md)
-- **Architecture**: [tests/shell/bash/ARCHITECTURE.md](tests/shell/bash/ARCHITECTURE.md)
-- **Hooks Guide**: [tests/shell/bash/HOOKS.md](tests/shell/bash/HOOKS.md)
-- **Windows Support**: [tests/shell/bash/WINDOWS.md](tests/shell/bash/WINDOWS.md)
-- **CI/CD Guide**: [tests/shell/bash/CI.md](tests/shell/bash/CI.md)
+### Test Framework
+- **Overview**: [docs/tests/shell/bash/INDEX.md](docs/tests/shell/bash/INDEX.md)
+- **Quick Start**: [docs/tests/shell/bash/QUICKSTART.md](docs/tests/shell/bash/QUICKSTART.md)
+- **Complete Guide**: [docs/tests/shell/bash/README.md](docs/tests/shell/bash/README.md)
+- **Architecture**: [docs/tests/shell/bash/ARCHITECTURE.md](docs/tests/shell/bash/ARCHITECTURE.md)
+- **Hooks Guide**: [docs/tests/shell/bash/HOOKS.md](docs/tests/shell/bash/HOOKS.md)
+- **Windows Support**: [docs/tests/shell/bash/WINDOWS.md](docs/tests/shell/bash/WINDOWS.md)
+- **CI/CD Guide**: [docs/tests/shell/bash/CI.md](docs/tests/shell/bash/CI.md)
+- **Implementation Details**: [docs/tests/shell/bash/IMPLEMENTATION.md](docs/tests/shell/bash/IMPLEMENTATION.md)
 
 ## License
 

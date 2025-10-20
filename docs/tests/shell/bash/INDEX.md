@@ -8,7 +8,7 @@ Welcome to the Shell Script Test Runner documentation!
 - **Need help?** → Check [README.md](README.md)
 - **Want details?** → See [IMPLEMENTATION.md](IMPLEMENTATION.md)
 - **Planning changes?** → Review [ARCHITECTURE.md](ARCHITECTURE.md)
-- **Project architecture?** → See [Root README](../../../README.md)
+- **Project architecture?** → See [Root README](../../../../README.md)
 
 ## 📚 Documentation Structure
 
@@ -173,17 +173,21 @@ Actions/                         ← Root project
 # Show help
 ./test-runner.sh --help
 
+# Set environment variables once
+export OPENDAQ_TESTS_SCRIPTS_DIR="../../../scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./suites"
+
 # Run all tests
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}"
+./test-runner.sh
 
 # Run specific suite
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --include-test "test-basic*"
+./test-runner.sh --include-test "test-basic*"
 
 # Dry run
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --dry-run --verbose
+./test-runner.sh --dry-run --verbose
 
 # List tests
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --list-tests
+./test-runner.sh --list-tests
 ```
 
 ### Pattern Examples
@@ -209,7 +213,7 @@ test-integration*:test-api*
 1. Check [README.md](README.md) → Troubleshooting section
 2. Run with `--verbose` for detailed output
 3. Check example tests for patterns
-4. See [Root README](../../../README.md) for project architecture
+4. See [Root README](../../../../README.md) for project architecture
 
 ## 📊 Status
 
@@ -226,10 +230,14 @@ Get started in 3 minutes:
 # 1. Run demo
 ./demo.sh
 
-# 2. Run example tests
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}"
+# 2. Set environment variables
+export OPENDAQ_TESTS_SCRIPTS_DIR="../../../scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./suites"
 
-# 3. Create your first test
+# 3. Run example tests
+./test-runner.sh
+
+# 4. Create your first test
 cat > suites/test-mytest.sh << 'EOF'
 #!/usr/bin/env bash
 test-mytest-hello() {
@@ -238,8 +246,8 @@ test-mytest-hello() {
 }
 EOF
 
-# 4. Run it!
-./test-runner.sh --suites-dir ./suites --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" --include-test "test-mytest*"
+# 5. Run it!
+./test-runner.sh --include-test "test-mytest*"
 ```
 
 Happy testing! 🚀

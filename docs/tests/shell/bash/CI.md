@@ -345,4 +345,4 @@ Track which scripts have tests:
 - [README.md](README.md) - Complete test runner documentation
 - [QUICKSTART.md](QUICKSTART.md) - Quick start guide
 - [IMPLEMENTATION.md](IMPLEMENTATION.md) - Implementation details
-- [Root README](../../../README.md) - Project architecture and actions
+- [Root README](../../../../README.md) - Project architecture and actions

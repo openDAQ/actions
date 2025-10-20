@@ -174,7 +174,7 @@ api-github-gh.sh       # GitHub API utilities
 - Use dash separators (kebab-case)
 - Always `.sh` extension
 - All lowercase
-`
+
 ### Module Prefixes
 
 Each script module uses consistent prefix:
