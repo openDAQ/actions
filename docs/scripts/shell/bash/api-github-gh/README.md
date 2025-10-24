@@ -402,9 +402,9 @@ gh auth login
 
 ## See Also
 
-- [API.md](API.md) - Complete API documentation
 - [GitHub CLI Documentation](https://cli.github.com/manual/)
 - [GitHub REST API](https://docs.github.com/en/rest)
 - [version-format.sh](../version-format/README.md) - Version string utilities
 - [platform-format.sh](../platform-format/README.md) - Platform detection utilities
 - [packaging-format.sh](../packaging-format/README.md) - Package format utilities
+- [README.md](./../../../../../README.md) - Actions overview

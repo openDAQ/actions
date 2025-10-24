@@ -450,5 +450,6 @@ Error: Cannot detect Linux distribution: /etc/os-release not found
 
 ## See Also
 
-- [API.md](API.md) - Complete API reference for library usage
-- [CONVENTIONS.md](../CONVENTIONS.md) - Common naming conventions for OpenDAQ bash scripts.
+- [API.md](./API.md) - Complete API reference for library usage
+- [CONVENTIONS.md](./../CONVENTIONS.md) - Common naming conventions for OpenDAQ bash scripts.
+- [README.md](./../../../../../README.md) - Actions overview

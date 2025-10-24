@@ -216,5 +216,5 @@ All error messages are written to stderr with `[ERROR]` prefix:
 
 ## See Also
 
-- [README.md](README.md) - Module overview and quick start
-- [CONVENTIONS.md](../CONVENTIONS.md) - Bash scripting conventions
+- [README.md](./README.md) - Module overview and quick start
+- **[CONVENTIONS.md](./../CONVENTIONS.md)** - Common naming conventions for OpenDAQ bash scripts.

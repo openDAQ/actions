@@ -294,39 +294,34 @@ Excluded tests:  3
 
 ### CI/CD Integration (GitHub Actions)
 ```bash
-# Set scripts directory
-export DAQ_TESTS_SCRIPTS_DIR="${{ github.workspace }}/scripts"
+# Set environment variables
+export OPENDAQ_TESTS_SCRIPTS_DIR="${{ github.workspace }}/scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./suites"
 
 # Run tests
 cd tests/shell/bash
-./test-runner.sh \
-  --suites-dir ./suites \
-  --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" \
-  --fail-fast true
+./test-runner.sh --fail-fast true
 ```
 
 ### Pre-commit Hook
 ```bash
 #!/bin/bash
-# Set scripts directory (relative to repo root)
-export DAQ_TESTS_SCRIPTS_DIR="./scripts"
+# Set environment variables (relative to repo root)
+export OPENDAQ_TESTS_SCRIPTS_DIR="./scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./tests/shell/bash/suites"
 
 cd tests/shell/bash
-./test-runner.sh \
-  --suites-dir ./suites \
-  --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}" \
-  --fail-fast true
+./test-runner.sh --fail-fast true
 ```
 
 ### Direct Invocation
 ```bash
 # From project root
-export DAQ_TESTS_SCRIPTS_DIR="./scripts"
+export OPENDAQ_TESTS_SCRIPTS_DIR="./scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./tests/shell/bash/suites"
 
 cd tests/shell/bash
-./test-runner.sh \
-  --suites-dir ./suites \
-  --scripts-dir "${DAQ_TESTS_SCRIPTS_DIR}"
+./test-runner.sh
 ```
 
 ## Maintenance

@@ -174,7 +174,7 @@ api-github-gh.sh       # GitHub API utilities
 - Use dash separators (kebab-case)
 - Always `.sh` extension
 - All lowercase
-`
+
 ### Module Prefixes
 
 Each script module uses consistent prefix:
@@ -390,3 +390,4 @@ Following these conventions provides:
 - [platform-format.sh](platform-format/README.md) - Domain module example
 - [packaging-format.sh](packaging-format/README.md) - Domain module example
 - [api-github-gh.sh](api-github-gh/README.md) - API wrapper module example
+- [README.md](./../../../../README.md) - Actions overview

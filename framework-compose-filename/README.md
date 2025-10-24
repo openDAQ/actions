@@ -186,3 +186,6 @@ The action automatically detects the appropriate packaging format based on the r
     echo "Version: ${{ steps.compose.outputs.version }}"
     echo "Platform: ${{ steps.compose.outputs.platform }}"
 ```
+
+## See Also
+- [README.md](./../README.md) - Actions overview

@@ -11,6 +11,7 @@ A flexible and powerful test runner for bash and zsh scripts with support for fi
 - 🚀 **Fail-Fast Mode**: Stop on first failure for faster feedback
 - 🔍 **Discovery Modes**: List suites, tests, and see what will run
 - 📝 **Verbose Logging**: Optional detailed output for debugging
+- 🪝 **Test Hooks**: Setup and teardown functions for each test
 
 ## Requirements
 
@@ -117,6 +118,40 @@ test-example-another() {
 Examples:
 - Suite: `test-integration.sh` → Tests: `test-api-call()`, `test-database-connection()`
 - Suite: `test-unit.sh` → Tests: `test-parse-json()`, `test-validate-input()`
+
+### Using Test Hooks
+
+Add optional setup and teardown hooks to your test suite:
+
+```bash
+#!/usr/bin/env bash
+# test-example.sh
+
+# Runs before EACH test
+test_setup() {
+    TEMP_FILE="/tmp/test-$$.txt"
+    echo "test data" > "${TEMP_FILE}"
+}
+
+# Runs after EACH test (even if test fails)
+test_teardown() {
+    rm -f "${TEMP_FILE}"
+}
+
+test-example-with-hooks() {
+    # TEMP_FILE is created by test_setup
+    local content=$(cat "${TEMP_FILE}")
+    [[ "${content}" == "test data" ]]
+}
+```
+
+**Key points:**
+- `test_setup()` runs before each test (optional)
+- `test_teardown()` runs after each test, even if it fails (optional)
+- Setup failure causes test to be skipped
+- Each test gets fresh environment (subshell isolation)
+
+**Learn more:** See [HOOKS.md](HOOKS.md) for complete guide with examples.
 
 ## Usage
 
@@ -406,15 +441,42 @@ These functions are available for use in test suites:
 
 #### Public Variables
 
-- `OPENDAQ_TESTS_SCRIPTS_DIR` - Path to scripts directory
-- `OPENDAQ_TESTS_SUITES_DIR` - Path to suites directory
+- **`OPENDAQ_TESTS_SCRIPTS_DIR`** - Path to scripts directory
+  - Initializes internal variable `__DAQ_TESTS_SCRIPTS_DIR`
+  - When set, makes `--scripts-dir` command-line flag optional
+  - Example: `export OPENDAQ_TESTS_SCRIPTS_DIR="../../../scripts"`
+
+- **`OPENDAQ_TESTS_SUITES_DIR`** - Path to suites directory
+  - Initializes internal variable `__DAQ_TESTS_SUITES_DIR`
+  - When set, makes `--suites-dir` command-line flag optional
+  - Example: `export OPENDAQ_TESTS_SUITES_DIR="./suites"`
+
+**Usage**: Set these variables once, then run test-runner without directory flags:
+```bash
+export OPENDAQ_TESTS_SCRIPTS_DIR="../../../scripts"
+export OPENDAQ_TESTS_SUITES_DIR="./suites"
+./test-runner.sh  # No flags needed!
+```
 
 ### Naming Conventions
 
-- **Private variables**: `__DAQ_TESTS_*` (double underscore prefix)
-- **Public variables**: `OPENDAQ_TESTS_*`
-- **Private functions**: `__daq_tests_*` (double underscore prefix)
-- **Public functions**: `daq_tests_*`
+The test framework follows the [general project conventions](../../scripts/shell/bash/CONVENTIONS.md) with `TESTS` as the module name.
+
+**Framework functions and variables** (follow standard conventions):
+- **Public variables**: `OPENDAQ_TESTS_*` (e.g., `OPENDAQ_TESTS_SCRIPTS_DIR`)
+- **Private variables**: `__DAQ_TESTS_*` (e.g., `__DAQ_TESTS_VERBOSE`)
+- **Private functions**: `__daq_tests_*` (e.g., `__daq_tests_log()`)
+- **Public functions**: `daq_tests_*` (if exposed as API)
+
+**Test functions and hooks** (exceptions for test runner pattern matching):
+- **Test functions**: `test-<test-name>()` (e.g., `test-api-call()`)
+  - Exception to convention: uses dash instead of underscore and no prefix
+  - Reason: test runner discovers tests by pattern matching `test-*` functions
+- **Suite files**: `test-<suite-name>.sh` (e.g., `test-integration.sh`)
+- **Setup/teardown hooks**: `test_setup()` and `test_teardown()`
+  - Exception to convention: fixed names required by test runner
+
+> **Note**: Exceptions exist only where the test runner needs to discover functions by pattern matching. All other code follows standard conventions.
 
 ## Troubleshooting
 
@@ -446,6 +508,16 @@ These functions are available for use in test suites:
 - Check bash version: `bash --version` (need 3.2+)
 - Try running in bash explicitly: `bash ./test-runner.sh ...`
 - Check for bash-specific syntax in your tests
+
+## See Also
+
+- [QUICKSTART.md](QUICKSTART.md) - Quick start guide
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and design
+- [IMPLEMENTATION.md](IMPLEMENTATION.md) - Implementation details and status
+- [HOOKS.md](HOOKS.md) - Test hooks guide (setup/teardown)
+- [WINDOWS.md](WINDOWS.md) - Windows support and path conversion
+- [CI.md](CI.md) - CI/CD integration guide
+- [INDEX.md](INDEX.md) - Documentation index
 
 ## Contributing
 

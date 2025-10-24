@@ -257,7 +257,15 @@ For each suite:
       │   │
       │   └─► Run test:
       │       │
-      │       ├─► Execute function
+      │       ├─► Check for test_setup()
+      │       │   └─► If exists, run setup
+      │       │       └─► If fails, skip test
+      │       │
+      │       ├─► Execute test function
+      │       │
+      │       ├─► Check for test_teardown()
+      │       │   └─► If exists, run teardown
+      │       │       └─► If fails, log warning
       │       │
       │       ├─► Capture exit code
       │       │
@@ -313,11 +321,15 @@ For each suite:
 ```
 test-runner.sh
     │
+    ├─► core/assert.sh (required, no dependencies)
+    │
     ├─► core/compat.sh (required, no dependencies)
     │
     ├─► core/log.sh    (required, no dependencies)
     │
-    └─► core/filter.sh (required, depends on compat.sh)
+    ├─► core/filter.sh (required, depends on compat.sh)
+    │
+    └─► core/paths.sh  (required, no dependencies)
 ```
 
 ## Naming Conventions
@@ -369,3 +381,11 @@ test-runner.sh
 │                                    │
 └────────────────────────────────────┘
 ```
+
+## See Also
+
+- [README.md](README.md) - Complete user guide
+- [IMPLEMENTATION.md](IMPLEMENTATION.md) - Implementation details
+- [HOOKS.md](HOOKS.md) - Test hooks guide (setup/teardown)
+- [QUICKSTART.md](QUICKSTART.md) - Quick start guide
+- [INDEX.md](INDEX.md) - Documentation index

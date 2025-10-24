@@ -2,9 +2,13 @@ name: Test Bash Scripts
 
 on:
   push:
-    paths: [ 'scripts/**', 'tests/shell/bash/**' ]
+    paths:
+      - 'scripts/**/*.sh'
+      - 'tests/shell/bash/**/*.sh'
   pull_request:
-    paths: [ 'scripts/**', 'tests/shell/bash/**' ]
+    paths:
+      - 'scripts/**/*.sh'
+      - 'tests/shell/bash/**/*.sh'
   workflow_dispatch:
 
 jobs:
