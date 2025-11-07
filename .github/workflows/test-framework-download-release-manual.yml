@@ -1,0 +1,82 @@
+name: Test Download Release Asset
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner-os:
+        description: 'Runner OS to use'
+        required: true
+        type: string
+        default: 'ubuntu-latest'
+      
+      version:
+        description: 'Release version (e.g., v3.20.4) or "latest"'
+        required: false
+        type: string
+        default: 'latest'
+      
+      platform:
+        description: 'Target platform (e.g., ubuntu22.04-x86_64, win64) or leave empty for auto-detect'
+        required: false
+        type: string
+        default: ''
+      
+      packaging:
+        description: 'Package format override (e.g., deb, exe, tar.gz, zip) or leave empty for auto-detect'
+        required: false
+        type: string
+        default: ''
+      
+      asset-pattern:
+        description: 'Custom glob pattern to filter assets (overrides auto-detection)'
+        required: false
+        type: string
+        default: ''
+      
+      output-dir:
+        description: 'Output directory for downloaded assets (leave empty for runner.temp)'
+        required: false
+        type: string
+        default: ''
+      
+      verbose:
+        description: 'Enable verbose output'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  download-release:
+    name: Download on ${{ inputs.runner-os }}
+    runs-on: ${{ inputs.runner-os }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Download OpenDAQ release asset
+        id: download
+        uses: ./framework-download-release
+        with:
+          version: ${{ inputs.version }}
+          platform: ${{ inputs.platform }}
+          packaging: ${{ inputs.packaging }}
+          asset-pattern: ${{ inputs.asset-pattern }}
+          output-dir: ${{ inputs.output-dir }}
+          verbose: ${{ inputs.verbose }}
+      
+      - name: Display results
+        shell: bash
+        run: |
+          echo "=== Download Results ==="
+          echo ""
+          echo "📦 Asset: ${{ steps.download.outputs.asset-filename }}"
+          echo "📍 Path: ${{ steps.download.outputs.asset }}"
+          echo "📂 Directory: ${{ steps.download.outputs.asset-dir }}"
+          echo ""
+          echo "🏷️  Version: ${{ steps.download.outputs.version }}"
+          echo "🖥️  Platform: ${{ steps.download.outputs.platform }}"
+          echo "📦 Packaging: ${{ steps.download.outputs.packaging }}"
+          echo ""
+          echo "📊 Size: ${{ steps.download.outputs.asset-filesize }} bytes"
+          echo "🔐 SHA256: ${{ steps.download.outputs.asset-checksum }}"
