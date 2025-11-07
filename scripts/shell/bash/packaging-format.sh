@@ -71,19 +71,20 @@ __daq_packaging_main() {
                 shift
                 ;;
             --cpack-generator)
-                if [[ -z "$2" ]] || [[ "$2" == --* ]]; then
+                cpack_generator="${2-}"
+                if [[ -z "$cpack_generator" ]] || [[ "$cpack_generator" == --* ]]; then
                     __daq_packaging_error "Missing value for --cpack-generator"
                     return 1
                 fi
-                cpack_generator="$2"
+                
                 shift 2
                 ;;
             --os-name)
-                if [[ -z "$2" ]] || [[ "$2" == --* ]]; then
+                os_name="${2-}"
+                if [[ -z "$os_name" ]] || [[ "$os_name" == --* ]]; then
                     __daq_packaging_error "Missing value for --os-name"
                     return 1
                 fi
-                os_name="$2"
                 shift 2
                 ;;
             --verbose)
@@ -249,18 +250,17 @@ if [ -n "${BASH_VERSION:-}" ]; then
     # Bash: Compare script path with invocation path
     # BASH_SOURCE[0] = script path, $0 = invocation path
     if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
-        __DAQ_PLATFORM_SOURCED=1
+        __DAQ_PACKAGING_SOURCED=1
     fi
 elif [ -n "${ZSH_VERSION:-}" ]; then
     # Zsh: Use prompt expansion to get script name
-    # %N expands to script/function name
-    __DAQ_PLATFORM_SCRIPT_PATH="${(%):-%N}"
-    if [ "$__DAQ_PLATFORM_SCRIPT_PATH" != "${0}" ]; then
-        __DAQ_PLATFORM_SOURCED=1
+    if [[ "${ZSH_EVAL_CONTEXT:-}" == *:file ]]; then
+        __DAQ_PACKAGING_SOURCED=1
     fi
 fi
 
 # Run CLI mode if not sourced
 if [[ "${__DAQ_PACKAGING_SOURCED}" -eq 0 ]]; then
     __daq_packaging_main "$@"
+    exit $?
 fi
