@@ -1,0 +1,43 @@
+name: Test Bash Scripts
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  test-scripts:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup environment variables
+        shell: bash
+        run: |
+          # Set scripts directory
+          echo "OPENDAQ_TESTS_SCRIPTS_DIR=${{ github.workspace }}/scripts/shell/bash" >> $GITHUB_ENV
+          echo "OPENDAQ_TESTS_SUITES_DIR=${{ github.workspace }}/tests/shell/bash/suites" >> $GITHUB_ENV
+
+      - name: Run tests (excluding demos except math-utils)
+        shell: bash
+        working-directory: tests/shell/bash
+        run: |
+          ./test-runner.sh \
+            --fail-fast true
+      
+      - name: Test results summary
+        if: always()
+        shell: bash
+        run: |
+          echo "### Test Results for ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Script tests completed" >> $GITHUB_STEP_SUMMARY
