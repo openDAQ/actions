@@ -1,0 +1,57 @@
+name: "Call action manually: framework compose filename"
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner to use (e.g. ubuntu-latest, ubuntu-22.04, windows-latest, etc)"
+        type: string
+        required: false
+        default: ubuntu-latest
+      version:
+        description: 'OpenDAQ version (if not set, resolves to latest from openDAQ/openDAQ)'
+        required: false
+      platform:
+        description: 'Target platform (if not set, auto-detected)'
+        required: false
+      packaging:
+        description: 'Packaging format for cpack (if not set, uses runner OS name)'
+        required: false
+
+jobs:
+  test-compose-filename-manually:
+    runs-on: ${{ inputs.runner }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Compose openDAQ framework filename
+      id: call-framework-compose-filename
+      uses: ./framework-compose-filename
+      with:
+        version: ${{ inputs.version }}
+        platform: ${{ inputs.platform }}
+        packaging: ${{ inputs.packaging }}
+    
+    - name: Display Results
+      shell: bash
+      run: |
+        echo "╔══════════════════════════════════════════════════════════════════════════════╗"
+        echo "║                     Package Filename Composition Results                     ║"
+        echo "╠══════════════════════════════════════════════════════════════════════════════╣"
+        echo "║ 🏷️  Version (full):    ${{ steps.call-framework-compose-filename.outputs.version }}"
+        echo "║    ├─ Major:           ${{ steps.call-framework-compose-filename.outputs.version-major }}"
+        echo "║    ├─ Minor:           ${{ steps.call-framework-compose-filename.outputs.version-minor }}"
+        echo "║    ├─ Patch:           ${{ steps.call-framework-compose-filename.outputs.version-patch }}"
+        echo "║    ├─ Suffix:          ${{ steps.call-framework-compose-filename.outputs.version-suffix || '*** NOT SET ***' }}"
+        echo "║    └─ Hash:            ${{ steps.call-framework-compose-filename.outputs.version-hash || '*** NOT SET ***' }}"
+        echo "╠══════════════════════════════════════════════════════════════════════════════╣"
+        echo "║ 🖥️  Platform (full):   ${{ steps.call-framework-compose-filename.outputs.platform }}"
+        echo "║    ├─ OS Name:         ${{ steps.call-framework-compose-filename.outputs.platform-os-name }}"
+        echo "║    ├─ OS Version:      ${{ steps.call-framework-compose-filename.outputs.platform-os-version }}"
+        echo "║    └─ Architecture:    ${{ steps.call-framework-compose-filename.outputs.platform-os-arch }}"
+        echo "╠══════════════════════════════════════════════════════════════════════════════╣"
+        echo "║ 📦 Packaging:          ${{ steps.call-framework-compose-filename.outputs.packaging }}"
+        echo "╠══════════════════════════════════════════════════════════════════════════════╣"
+        echo "║ 📄 Filename:           ${{ steps.call-framework-compose-filename.outputs.filename }}"
+        echo "╚══════════════════════════════════════════════════════════════════════════════╝"
