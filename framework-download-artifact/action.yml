@@ -1,0 +1,248 @@
+name: 'Framework Download Artifact'
+description: 'Download and extract artifact from a workflow run'
+author: 'OpenDAQ'
+
+inputs:
+  run-id:
+    description: 'GitHub workflow run ID'
+    required: true
+  artifact-name:
+    description: 'Name of the artifact to download (supports glob patterns)'
+    required: true
+  artifact-filename:
+    description: 'Specific file name to extract from the artifact (supports glob patterns)'
+    required: true
+  output-dir:
+    description: 'Output directory for extracted artifact (default: runner temp)'
+    required: false
+  token:
+    description: 'GitHub token (required for cross-repo access)'
+    required: false
+    default: ''
+  retry-attempts:
+    description: 'Number of retry attempts on failure'
+    required: false
+    default: '3'
+  verbose:
+    description: 'Enables verbose logging output'
+    required: false
+    default: false
+
+outputs:
+  artifact:
+    description: 'Path to the downloaded and extracted artifact'
+    value: ${{ steps.download.outputs.artifact }}
+  artifact-dir:
+    description: 'Path to the downloaded and extracted artifact directory'
+    value: ${{ steps.download.outputs.artifact-dir }}
+  artifact-filename:
+    description: 'Path to the downloaded and extracted artifact'
+    value: ${{ steps.download.outputs.artifact-filename }}
+  artifact-filesize:
+    description: 'Size of the downloaded artifact in bytes'
+    value: ${{ steps.finalize.outputs.artifact_size }}
+  artifact-checksum:
+    description: 'Checksum of the downloaded artifact'
+    value: ${{ steps.finalize.outputs.artifact_size }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      env:
+        OPENDAQ_ARIFACT_RUN_ID: ${{ inputs.run-id }}
+        OPENDAQ_FRAMEWORK_ARTIFACT_NAME: "${{ inputs.artifact-name }}"
+        OPENDAQ_FRAMEWORK_ARTIFACT_FILENAME: "${{ inputs.artifact-filename }}"
+        OPENDAQ_FRAMEWORK_OUTPUT_DIR: "${{ inputs.output-dir }}"
+      run: |
+        if [ -z "$OPENDAQ_ARIFACT_RUN_ID" ]; then
+          echo "::error::❌ Artifact workflow run ID must not be empty"
+          exit 1
+        fi
+        
+        if ! echo "$OPENDAQ_ARIFACT_RUN_ID" | grep -qE '^[0-9]+$'; then
+          echo "::error::❌ Artifact workflow run ID must be numenric (${OPENDAQ_ARIFACT_RUN_ID:-"<empty>"})"
+          exit 1
+        fi
+
+        if [ -z "$OPENDAQ_FRAMEWORK_ARTIFACT_NAME" ]; then
+          echo "::error::❌ Artifact name must not be empty"
+          exit 1
+        fi
+
+        if [ -z "$OPENDAQ_FRAMEWORK_ARTIFACT_FILENAME" ]; then
+          echo "::error::❌ Artifact filename must not be empty"
+          exit 1
+        fi
+
+        if [ -z "$OPENDAQ_FRAMEWORK_OUTPUT_DIR" ]; then
+          echo "::warning::⚠️ Artifact output directory is set to default '${{ runner.temp }}'"
+        fi
+
+    - name: Init shell scripts
+      id: shell-scripts
+      shell: bash
+      env:
+        OPENDAQ_FRAMEWORK_ARTIFACT_NAME: "${{ inputs.artifact-name }}"
+        OPENDAQ_FRAMEWORK_ARTIFACT_FILENAME: "${{ inputs.artifact-filename }}"
+        OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR: "${{ inputs.output-dir || runner.temp }}"
+        OPENDAQ_ACTIONS_SCRIPS_DIR: "${{ github.action_path }}/../scripts/shell/bash"
+        OPENDAQ_GH_API_CACHE_DIR: "${{ runner.temp }}"
+      run: |
+        dirs=(
+          "OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR"
+          "OPENDAQ_ACTIONS_SCRIPS_DIR" 
+          "OPENDAQ_GH_API_CACHE_DIR"
+        )
+        for dir_name in "${dirs[@]}"; do
+          # Get current value via indirect expansion
+          dir_value="${!dir_name}"
+
+          # Normalize path for Windows (convert to Unix-style)
+          if command -v cygpath >/dev/null 2>&1; then
+            dir_value="$(cygpath "$dir_value")"
+          fi
+
+          # Check if directory exists
+          if [ ! -d "$dir_value" ]; then
+              echo "⚠️ Directory not found at '$dir_value'. Attempting to create..."
+              if ! mkdir -p "$dir_value"; then
+                echo "❌ Error: failed to create directory '$dir_value'" >&2
+                exit 1
+              fi
+          fi
+
+          # Resolve absolute path
+          dir_value="$(cd "$dir_value" >/dev/null 2>&1 && pwd)"
+          echo "✔ Normalized dir $dir_name=$dir_value"
+          
+          # Assign back via indirect expansion
+          export "$dir_name"="$dir_value"
+
+        done
+
+        # List of scripts that must be executable
+        scripts=(
+          "api-github-gh.sh"
+        )
+
+        # Iterate and apply +x with error handling
+        for rel_path in "${scripts[@]}"; do
+          script_path="${OPENDAQ_ACTIONS_SCRIPS_DIR}/${rel_path}"
+
+          if [ ! -f "$script_path" ]; then
+            echo "❌ Error: missing script '$script_path'" >&2
+            exit 1
+          fi
+
+          if ! chmod +x "$script_path"; then
+            echo "❌ Error: failed to chmod +x '$script_path'" >&2
+            exit 1
+          fi
+
+          echo "✔ Marked as executable: $rel_path"
+        done
+
+        # Export normalized directory path to step output
+        echo "artifact-dir=$OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR" >> "$GITHUB_OUTPUT"
+        echo "script-dir=$OPENDAQ_ACTIONS_SCRIPS_DIR" >> "$GITHUB_OUTPUT"
+        echo "cache-dir=$OPENDAQ_GH_API_CACHE_DIR" >> "$GITHUB_OUTPUT"
+
+    - name: Download and Extract Artifact
+      id: download
+      shell: bash
+      env:
+        OPENDAQ_ARIFACT_RUN_ID: ${{ inputs.run-id }}
+        OPENDAQ_FRAMEWORK_ARTIFACT_NAME: "${{ inputs.artifact-name }}"
+        OPENDAQ_FRAMEWORK_ARTIFACT_FILENAME: "${{ inputs.artifact-filename }}"
+        OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR: "${{ steps.shell-scripts.outputs.artifact-dir }}"
+        OPENDAQ_ACTIONS_SCRIPS_DIR: "${{ steps.shell-scripts.outputs.script-dir }}"
+        OPENDAQ_GH_API_CACHE_DIR: "${{ steps.shell-scripts.outputs.cache-dir }}"
+        OPENDAQ_GH_API_GITHUB_REPO: 'openDAQ/openDAQ'
+        GITHUB_TOKEN: ${{ inputs.token || github.token }}
+        RETRY_ATTEMPTS: ${{ inputs.retry-attempts }}
+      run: |      
+        API_SCRIPT="$OPENDAQ_ACTIONS_SCRIPS_DIR/api-github-gh.sh"
+
+        # Download with retry logic
+        attempt=1
+        status=false
+
+        dir="${OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR}/${OPENDAQ_FRAMEWORK_ARTIFACT_NAME}"
+        artifact="$dir/${OPENDAQ_FRAMEWORK_ARTIFACT_FILENAME}"
+
+        echo "⬇ Download artifact from workflow run id '$OPENDAQ_ARIFACT_RUN_ID' at '$artifact'"        
+        while [ $attempt -le $RETRY_ATTEMPTS ] && [ "$status" = false ]; do
+          echo "↪ Download attempt $attempt/$RETRY_ATTEMPTS ==="
+          
+          if "$API_SCRIPT" \
+            --download-artifact \
+            --run-id "$OPENDAQ_ARIFACT_RUN_ID" \
+            --output-dir "$OPENDAQ_FRAMEWORK_ARTIFACT_OUTPUT_DIR" \
+            --pattern "$OPENDAQ_FRAMEWORK_ARTIFACT_NAME" \
+            --extract; then
+            
+            status=true
+            echo "✔ Download successful on attempt $attempt"
+          else
+            echo "::warning::⚠️ Download attempt $attempt failed with exit code $?"
+            
+            if [ $attempt -lt $RETRY_ATTEMPTS ]; then
+              WAIT_TIME=$((attempt * 10))
+              echo "⏳ Waiting ${WAIT_TIME}s before retry..."
+              sleep $WAIT_TIME
+            fi
+            
+            attempt=$((attempt + 1))
+          fi
+        done
+        
+        if [ "$status" = false ]; then
+          echo "::error::❌ Failed to download artifact after '$RETRY_ATTEMPTS' attempts"
+          exit 1
+        fi
+
+        if [ ! -d "$dir" ]; then
+          echo "::error::❌ Artifact directory not found at '$dir'"
+          ls -la $(dirname "$dir")
+          exit 1
+        fi
+
+        if [ ! -f "$artifact" ]; then
+          echo "::error::❌ Artifact filename not found at '$artifact'"
+          ls -la $(dirname "$artifact")
+          exit 1
+        fi
+
+        echo "✔ Artefact exists at $artifact"
+
+        if ! filesize=$(
+          stat -c%s "$artifact" 2>/dev/null || \
+          stat -f%z "$artifact" 2>/dev/null || \
+          stat -L -t "$artifact" 2>/dev/null | awk '{print $2}' || \
+          powershell -Command "(Get-Item '$artifact').Length" 2>/dev/null
+        ); then
+          echo "::warning::⚠️ Failed to check artifact file size $artifact"
+        else
+          echo "✔ Artefact filesize: ${filesize:-<unavailable>} (bytes)"
+        fi
+
+        if ! checksum=$(sha256sum "$artifact" 2>/dev/null | awk '{print $1}'); then
+          echo "::warning::⚠️ Failed to calculate the artifact checksum ($RETRY_ATTEMPTS attempts) $artifact"
+        else
+          echo "✔ Artefact checksum: sha256:${checksum:-<unavailable>}"
+        fi
+        
+        # Normalize path for Windows (convert to Unix-style)
+        if command -v cygpath >/dev/null 2>&1; then
+          artifact="$(cygpath -w "$artifact")"
+          dir="$(cygpath -w "$dir")"
+        fi
+        
+        # Store artifact name
+        echo "artifact=$artifact" >> $GITHUB_OUTPUT
+        echo "artifact-dir=$dir" >> $GITHUB_OUTPUT
+        echo "artifact-filename=$OPENDAQ_FRAMEWORK_ARTIFACT_NAME" >> $GITHUB_OUTPUT
+        echo "artifact-filesize=$filesize" >> $GITHUB_OUTPUT
+        echo "artifact-checksum=$checksum" >> $GITHUB_OUTPUT

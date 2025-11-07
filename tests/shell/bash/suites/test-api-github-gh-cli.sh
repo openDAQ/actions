@@ -20,7 +20,7 @@ case "$1" in
         ;;
     "api")
         # Return fake JSON
-        echo '{"tag_name": "v1.2.3", "assets": []}'
+        echo '{"tag_name": "v1.2.3", "assets": [], "workflow_runs": [], "artifacts": []}'
         exit 0
         ;;
 esac
@@ -237,6 +237,17 @@ test-cli-output-relative() {
     return 0
 }
 
+test-cli-artifact-missing-output() {
+    local output
+    output=$("$SCRIPT_PATH" openDAQ/openDAQ --download-artifact --run-id 123 2>&1)
+    local exit_code=$?
+    
+    daq_assert_failure $exit_code "Should fail without output-dir" || return 1
+    daq_assert_contains "output-dir is required" "$output" "Should mention required output-dir" || return 1
+    
+    return 0
+}
+
 test-cli-limit-numeric() {
     local output
     output=$("$SCRIPT_PATH" openDAQ/openDAQ --list-versions --limit 10 2>&1)
@@ -268,12 +279,84 @@ test-cli-limit-missing-value() {
     return 0
 }
 
+test-cli-artifacts-missing-run-id() {
+    local output
+    output=$("$SCRIPT_PATH" openDAQ/openDAQ --list-artifacts 2>&1)
+    local exit_code=$?
+    
+    daq_assert_failure $exit_code "Should fail without run-id" || return 1
+    daq_assert_contains "run-id is required" "$output" "Should mention required run-id" || return 1
+    
+    return 0
+}
+
+test-cli-run-id-missing-value() {
+    local output
+    output=$("$SCRIPT_PATH" openDAQ/openDAQ --run-id 2>&1)
+    local exit_code=$?
+    
+    daq_assert_failure $exit_code "Should fail with missing value" || return 1
+    daq_assert_contains "requires an argument" "$output" "Should mention missing argument" || return 1
+    
+    return 0
+}
+
+test-cli-list-artifacts() {
+    local output
+    output=$("$SCRIPT_PATH" openDAQ/openDAQ --list-artifacts --run-id 123 2>&1)
+    local exit_code=$?
+    
+    daq_assert_success $exit_code "Should list artifacts" || return 1
+    
+    return 0
+}
+
+test-cli-download-artifact-no-run() {
+    local temp_dir="$__DAQ_TESTS_SCRIPTS_DIR/tmp/test-$$"
+    mkdir -p "$temp_dir"
+    
+    local output
+    output=$("$SCRIPT_PATH" openDAQ/openDAQ --download-artifact --output-dir "$temp_dir" 2>&1)
+    local exit_code=$?
+    
+    rm -rf "$temp_dir"
+    
+    daq_assert_failure $exit_code "Should fail without run-id" || return 1
+    daq_assert_contains "run-id is required" "$output" "Should mention required run-id" || return 1
+    
+    return 0
+}
+
 test-cli-verbose() {
     local output
     output=$("$SCRIPT_PATH" openDAQ/openDAQ --verbose 2>&1)
     local exit_code=$?
     
     daq_assert_success $exit_code "Should accept verbose" || return 1
+    
+    return 0
+}
+
+test-cli-extract() {
+    local temp_dir="$__DAQ_TESTS_SCRIPTS_DIR/tmp/test-$$"
+    mkdir -p "$temp_dir"
+    
+    local output
+    output=$("$SCRIPT_PATH" openDAQ/openDAQ --download-artifact --run-id 123 --output-dir "$temp_dir" --extract 2>&1)
+    
+    rm -rf "$temp_dir"
+    
+    daq_assert_not_contains "Unknown option" "$output" "Should accept extract" || return 1
+    
+    return 0
+}
+
+test-cli-list-runs() {
+    local output
+    output=$("$SCRIPT_PATH" openDAQ/openDAQ --list-runs 2>&1)
+    local exit_code=$?
+    
+    daq_assert_success $exit_code "Should list runs" || return 1
     
     return 0
 }
@@ -318,6 +401,20 @@ test-cli-download-asset() {
     rm -rf "$temp_dir"
     
     daq_assert_not_contains "Unknown option" "$output" "Should recognize download-asset" || return 1
+    
+    return 0
+}
+
+test-cli-download-artifact() {
+    local temp_dir="$__DAQ_TESTS_SCRIPTS_DIR/tmp/test-$$"
+    mkdir -p "$temp_dir"
+    
+    local output
+    output=$("$SCRIPT_PATH" openDAQ/openDAQ --download-artifact --run-id 123 --output-dir "$temp_dir" 2>&1)
+    
+    rm -rf "$temp_dir"
+    
+    daq_assert_not_contains "Unknown option" "$output" "Should recognize download-artifact" || return 1
     
     return 0
 }
