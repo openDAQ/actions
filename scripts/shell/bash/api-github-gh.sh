@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# api-github-gh.sh - GitHub API wrapper for working with releases
-# Supports listing and resolving release versions
+# api-github-gh.sh - GitHub API wrapper for working with releases and assets
+# Supports downloading release assets, resolving versions and filenames
 # Compatible with bash 3.2+ and zsh
 
 # Exit on undefined variables
@@ -45,6 +45,8 @@ __DAQ_GH_API_VERBOSE=0
 __DAQ_GH_API_REPO=""
 __DAQ_GH_API_OWNER=""
 __DAQ_GH_API_VERSION=""
+__DAQ_GH_API_PATTERN=""
+__DAQ_GH_API_OUTPUT_DIR=""
 
 __DAQ_GH_API_GITHUB_REPO="${OPENDAQ_GH_API_GITHUB_REPO:-}"
 __DAQ_GH_API_CACHE_DIR="${OPENDAQ_GH_API_CACHE_DIR:-${TMPDIR:-${TEMP:-${TMP:-/tmp}}}}"
@@ -62,6 +64,7 @@ __daq_api_gh_regex_match() {
 
 __DAQ_GH_API_HELP_EXAMPLE_REPO="openDAQ/openDAQ"
 __DAQ_GH_API_HELP_EXAMPLE_VERSION="v3.20.4"
+__DAQ_GH_API_HELP_EXAMPLE_PATTERN="*linux*amd64*"
 
 __daq_api_gh_help() {
     cat <<EOF
@@ -70,6 +73,10 @@ Usage: api-github-gh OWNER/REPO [OPTIONS]
 OPTIONS:
     --version VERSION    Check specific version (default: latest)
     --list-versions      List all available versions
+    --list-assets        List assets for a version
+    --download-asset     Download assets for a version
+    --pattern PATTERN    Filter assets by pattern (glob-style)
+    --output-dir DIR     Output directory for downloads (required with --download-asset)
     --limit N            Limit number of versions (default: 30, use 'all' for all)
     --verbose            Enable verbose output
     --help               Show this help
@@ -86,6 +93,24 @@ EXAMPLES:
 
     # Get last 5 versions
     ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-versions --limit 5
+    
+    # List assets for latest version
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-assets
+    
+    # List assets for specific version
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-assets --version ${__DAQ_GH_API_HELP_EXAMPLE_VERSION}
+    
+    # Filter assets by pattern
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --list-assets --version ${__DAQ_GH_API_HELP_EXAMPLE_VERSION} --pattern "${__DAQ_GH_API_HELP_EXAMPLE_PATTERN}"    # Download all assets for latest version
+    
+    # Download all assets for latest version
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --download-asset --output-dir ./downloads
+
+    # Download specific version assets
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --download-asset --version ${__DAQ_GH_API_HELP_EXAMPLE_VERSION} --output-dir ./downloads/${__DAQ_GH_API_HELP_EXAMPLE_VERSION}
+    
+    # Download filtered assets
+    ./api-github-gh.sh ${__DAQ_GH_API_HELP_EXAMPLE_REPO} --download-asset --pattern "*ubuntu*" --output-dir ./downloads/ubuntu-builds
 
 ENVIRONMENT:
     OPENDAQ_GH_API_DEBUG=1          Enable debug output
@@ -320,6 +345,215 @@ daq_api_gh_version_list() {
     return $exit_code
 }
 
+# List all assets for a specific version
+daq_api_gh_assets_list() {
+    local version="${1:-}"
+    
+    if [[ -z "$version" ]]; then
+        __daq_api_gh_error "Version not specified for assets list"
+        return 1
+    fi
+    
+    local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases/tags/${version}"
+    local temp_file="${__DAQ_GH_API_CACHE_DIR_RESPONSE}/gh_response_$$"
+    
+    __daq_api_gh_info "Listing assets for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO} version $version"
+    
+    # Get release data
+    if ! daq_api_gh_request "$endpoint" > "$temp_file"; then
+        rm -f "$temp_file"
+        __daq_api_gh_error "Failed to get release data for version $version"
+        return 1
+    fi
+    
+    # Extract asset names
+    local assets
+    assets=$(jq -r '.assets[]? | .name // empty' < "$temp_file" 2>/dev/null)
+    local exit_code=$?
+    rm -f "$temp_file"
+    
+    if [[ -z "$assets" ]]; then
+        __daq_api_gh_debug "No assets found for version $version"
+        return 1
+    fi
+    
+    echo "$assets"
+    return $exit_code
+}
+
+# Filter assets by pattern
+daq_api_gh_assets_filter() {
+    local version="${1:-}"
+    local pattern="${2:-}"
+    
+    if [[ -z "$version" ]]; then
+        __daq_api_gh_error "Version not specified for assets filter"
+        return 1
+    fi
+    
+    if [[ -z "$pattern" ]]; then
+        __daq_api_gh_error "Pattern not specified for assets filter"
+        return 1
+    fi
+    
+    local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases/tags/${version}"
+    local temp_file="${__DAQ_GH_API_CACHE_DIR_RESPONSE}/gh_response_$$"
+    
+    __daq_api_gh_info "Filtering assets for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO} version $version with pattern: $pattern"
+    
+    # Get release data
+    if ! daq_api_gh_request "$endpoint" > "$temp_file"; then
+        rm -f "$temp_file"
+        __daq_api_gh_error "Failed to get release data for version $version"
+        return 1
+    fi
+    
+    # Convert glob pattern to regex for jq
+    # Simple conversion: * -> .*, ? -> .
+    local jq_pattern
+    jq_pattern=$(echo "$pattern" | sed 's/\*/\.\*/g' | sed 's/?/\./g')
+    
+    # Filter asset names using jq with regex
+    local filtered_assets
+    filtered_assets=$(jq -r --arg pattern "$jq_pattern" '.assets[]? | select(.name | test($pattern)) | .name' < "$temp_file" 2>/dev/null)
+    local exit_code=$?
+    rm -f "$temp_file"
+    
+    if [[ -z "$filtered_assets" ]]; then
+        __daq_api_gh_debug "No assets matching pattern '$pattern' for version $version"
+        return 1
+    fi
+    
+    echo "$filtered_assets"
+    return $exit_code
+}
+
+# Download single asset
+__daq_api_gh_download_asset() {
+    local download_url="$1"
+    local output_path="$2"
+    local filename="${output_path##*/}"
+
+    __daq_api_gh_info "Downloading: $filename"
+
+    # Use gh api to download (it handles auth automatically)
+    if gh api -H "Accept: application/octet-stream" "$download_url" > "$output_path" 2>/dev/null; then
+        __daq_api_gh_debug "Successfully downloaded: $filename"
+        return 0
+    else
+        __daq_api_gh_error "Failed to download: $filename"
+        # Clean up partial download
+        rm -f "$output_path"
+        return 1
+    fi
+}
+
+# Download assets for a version
+daq_api_gh_assets_download() {
+    local version="${1:-}"
+    local output_dir="${2:-}"
+    local pattern="${3:-}"
+
+    # Validate inputs
+    if [[ -z "$version" ]]; then
+        __daq_api_gh_error "Version not specified for download"
+        return 1
+    fi
+
+    if [[ -z "$output_dir" ]]; then
+        __daq_api_gh_error "--output-dir is required for --download-asset"
+        return 1
+    fi
+
+    # Create output directory if it doesn't exist
+    if [[ ! -d "$output_dir" ]]; then
+        __daq_api_gh_info "Creating directory: $output_dir"
+        if ! mkdir -p "$output_dir"; then
+            __daq_api_gh_error "Cannot create directory: $output_dir"
+            return 1
+        fi
+    fi
+
+    # Check write permissions
+    if [[ ! -w "$output_dir" ]]; then
+        __daq_api_gh_error "Cannot write to directory: $output_dir"
+        return 1
+    fi
+
+    local endpoint="repos/${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO}/releases/tags/${version}"
+    local temp_file="/tmp/gh_response_$$"
+
+    __daq_api_gh_info "Getting assets for ${__DAQ_GH_API_OWNER}/${__DAQ_GH_API_REPO} version $version"
+
+    # Get release data
+    if ! daq_api_gh_request "$endpoint" > "$temp_file"; then
+        rm -f "$temp_file"
+        __daq_api_gh_error "Failed to get release data for version $version"
+        return 1
+    fi
+
+    # Build jq query based on pattern
+    local jq_query
+    if [[ -n "$pattern" ]]; then
+        # Convert glob pattern to regex
+        local jq_pattern
+        jq_pattern=$(echo "$pattern" | sed 's/\*/\.\*/g' | sed 's/?/\./g')
+        jq_query=".assets[]? | select(.name | test(\"$jq_pattern\")) | {name: .name, url: .browser_download_url}"
+    else
+        jq_query='.assets[]? | {name: .name, url: .browser_download_url}'
+    fi
+
+    # Get assets to download
+    local assets_json
+    assets_json=$(jq -c "$jq_query" < "$temp_file" 2>/dev/null)
+    rm -f "$temp_file"
+
+    if [[ -z "$assets_json" ]]; then
+        if [[ -n "$pattern" ]]; then
+            __daq_api_gh_info "No assets matching pattern '$pattern' for version $version"
+        else
+            __daq_api_gh_info "No assets found for version $version"
+        fi
+        return 0
+    fi
+
+    # Download each asset
+    local download_count=0
+    local error_count=0
+
+    while IFS= read -r asset; do
+        local name=$(echo "$asset" | jq -r '.name')
+        local url=$(echo "$asset" | jq -r '.url')
+        local output_path="${output_dir}/${name}"
+
+        # Check if file already exists
+        if [[ -f "$output_path" ]]; then
+            __daq_api_gh_error "File already exists: $output_path"
+            ((error_count++))
+            continue
+        fi
+
+        # Download the asset
+        if __daq_api_gh_download_asset "$url" "$output_path"; then
+            download_count=$((download_count + 1))
+        else
+            error_count=$((error_count + 1))
+        fi
+    done <<< "$assets_json"
+
+    # Summary
+    if [[ $download_count -gt 0 ]]; then
+        echo "Downloaded $download_count file(s) to $output_dir"
+    fi
+
+    if [[ $error_count -gt 0 ]]; then
+        __daq_api_gh_error "Failed to download $error_count file(s)"
+        return 1
+    fi
+
+    return 0
+}
+
 __daq_api_gh_main() {
     local repo=${__DAQ_GH_API_GITHUB_REPO}
     local action=""
@@ -340,6 +574,30 @@ __daq_api_gh_main() {
             --list-versions)
                 action="list-versions"
                 shift
+                ;;
+            --list-assets)
+                action="list-assets"
+                shift
+                ;;
+            --download-asset)
+                action="download-asset"
+                shift
+                ;;
+            --pattern)
+                if [[ $# -lt 2 ]]; then
+                    __daq_api_gh_error "Option --pattern requires an argument"
+                    return 1
+                fi
+                __DAQ_GH_API_PATTERN="$2"
+                shift 2
+                ;;
+            --output-dir)
+                if [[ $# -lt 2 ]]; then
+                    __daq_api_gh_error "Option --output-dir requires an argument"
+                    return 1
+                fi
+                __DAQ_GH_API_OUTPUT_DIR="$2"
+                shift 2
                 ;;
             --limit)
                 if [[ $# -lt 2 ]]; then
@@ -400,6 +658,36 @@ __daq_api_gh_main() {
             ;;
         list-versions)
             daq_api_gh_version_list "$limit"
+            ;;
+        list-assets)
+            # Resolve version if needed
+            __DAQ_GH_API_VERSION="${__DAQ_GH_API_VERSION:-latest}"
+            if [[ "$__DAQ_GH_API_VERSION" == "latest" ]]; then
+                __DAQ_GH_API_VERSION=$(daq_api_gh_version_latest) || return 1
+            fi
+            
+            # List or filter assets
+            if [[ -n "$__DAQ_GH_API_PATTERN" ]]; then
+                daq_api_gh_assets_filter "$__DAQ_GH_API_VERSION" "$__DAQ_GH_API_PATTERN"
+            else
+                daq_api_gh_assets_list "$__DAQ_GH_API_VERSION"
+            fi
+            ;;
+        download-asset)
+            # Check required --output-dir
+            if [[ -z "$__DAQ_GH_API_OUTPUT_DIR" ]]; then
+                __daq_api_gh_error "--output-dir is required for --download-asset"
+                return 1
+            fi
+            
+            # Resolve version if needed
+            __DAQ_GH_API_VERSION="${__DAQ_GH_API_VERSION:-latest}"
+            if [[ "$__DAQ_GH_API_VERSION" == "latest" ]]; then
+                __DAQ_GH_API_VERSION=$(daq_api_gh_version_latest) || return 1
+            fi
+            
+            # Download assets
+            daq_api_gh_assets_download "$__DAQ_GH_API_VERSION" "$__DAQ_GH_API_OUTPUT_DIR" "$__DAQ_GH_API_PATTERN"
             ;;
         *)
             __daq_api_gh_error "Action not specified"
