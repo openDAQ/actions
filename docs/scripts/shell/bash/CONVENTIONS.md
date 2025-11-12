@@ -184,7 +184,70 @@ Each script module uses consistent prefix:
 | `version-format.sh` | `daq_version_` | `daq_version_compose` |
 | `platform-format.sh` | `daq_platform_` | `daq_platform_detect` |
 | `packaging-format.sh` | `daq_packaging_` | `daq_packaging_detect_from_cpack` |
-| `api-github-gh.sh` | `daq_gh_` | `daq_gh_release_list` |
+| `api-github-gh.sh` | `daq_api_gh_` | `daq_api_gh_version_latest` |
+
+## Special Module Naming Cases
+
+### API Wrapper Modules
+
+Modules that wrap external APIs or services may use extended prefixes for clarity.
+
+**Pattern**: `api-<service>-<tool>.sh` with prefix `daq_api_<service>_`
+
+**When to use**:
+- Module wraps external API or CLI tool
+- Need to distinguish from domain modules
+- Additional context improves API clarity
+
+**Examples**:
+
+```bash
+# GitHub API wrapper
+api-github-gh.sh          # Prefix: daq_api_gh_
+  daq_api_gh_version_latest()
+  daq_api_gh_version_list()
+
+# Hypothetical examples
+api-gitlab-cli.sh         # Prefix: daq_api_gitlab_
+api-docker-sdk.sh         # Prefix: daq_api_docker_
+```
+
+**Comparison with domain modules**:
+
+| Type | File Pattern | Prefix Pattern | Use Case |
+|------|--------------|----------------|----------|
+| Domain module | `<domain>-format.sh` | `daq_<domain>_` | Data format parsing/composition |
+| API wrapper | `api-<service>-<tool>.sh` | `daq_api_<service>_` | External service integration |
+
+**Example distinction**:
+
+```bash
+# Domain module - formats and parsing
+version-format.sh → daq_version_compose()    # Create version string
+version-format.sh → daq_version_parse()      # Parse version string
+
+# API wrapper - external service calls
+api-github-gh.sh → daq_api_gh_version_latest()   # Fetch from GitHub API
+api-github-gh.sh → daq_api_gh_version_list()     # List versions from GitHub
+```
+
+**Rationale**:
+- Prefix `daq_api_gh_` clearly indicates GitHub API wrapper
+- Distinguishes from potential `daq_github_` (format-related functions)
+- Prevents confusion between API calls and format operations
+- Allows both modules to coexist: `github-format.sh` (formats) and `api-github-gh.sh` (API)
+
+**Namespace protection**:
+
+```bash
+# Safe to source together
+source github-format.sh    # Hypothetical: daq_github_parse()
+source api-github-gh.sh    # Actual: daq_api_gh_version_latest()
+
+# No naming conflicts
+daq_github_parse "v1.0.0"              # Format parsing
+daq_api_gh_version_latest              # API call
+```
 
 ## Namespace Protection
 
@@ -228,10 +291,10 @@ daq_package_compose --version "$version" --platform "$platform"
 
 Each module should have one clear purpose:
 
-- âœ… `version-format.sh` - handles version strings
-- âœ… `platform-format.sh` - handles platform identifiers
-- âœ… `packaging-format.sh` - handles package extensions
-- âŒ `utils.sh` - too generic, unclear purpose
+- `version-format.sh` - handles version strings
+- `platform-format.sh` - handles platform identifiers
+- `packaging-format.sh` - handles package extensions
+- `utils.sh` - too generic, unclear purpose
 
 ### Focused API
 
@@ -299,8 +362,8 @@ daq_packaging_validate_generator()   # New: validate generator name
 
 Use this checklist when creating or reviewing scripts:
 
-- [ ] All public functions start with `daq_<module>_`
-- [ ] All private functions start with `__daq_<module>_`
+- [ ] All public functions start with `daq_<module>_` or `daq_api_<service>_` (for API wrappers)
+- [ ] All private functions start with `__daq_<module>_` or `__daq_api_<service>_` (for API wrappers)
 - [ ] All public constants start with `OPENDAQ_<MODULE>_`
 - [ ] All private variables start with `__DAQ_<MODULE>_`
 - [ ] Match variables start with `__MATCH_`
@@ -323,6 +386,7 @@ Following these conventions provides:
 
 ## See Also
 
-- [packaginh-format.sh](packaging-format/README.md) - Example implementation
-- [platform-format.sh](platform-format/README.md) - Example implementation
-- [version-format.sh](version-format/README.md) - Example implementation
+- [version-format.sh](version-format/README.md) - Domain module example
+- [platform-format.sh](platform-format/README.md) - Domain module example
+- [packaging-format.sh](packaging-format/README.md) - Domain module example
+- [api-github-gh.sh](api-github-gh/README.md) - API wrapper module example
