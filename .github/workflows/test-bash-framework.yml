@@ -1,0 +1,73 @@
+name: Test Bash Framework
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  test-framework:
+    name: Test Framework on ${{ matrix.os }} with ${{ matrix.shell-name }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu - bash and zsh
+          - os: ubuntu-latest
+            shell-name: bash
+            shell-cmd: bash
+          - os: ubuntu-latest
+            shell-name: zsh
+            shell-cmd: zsh
+          
+          # macOS - bash and zsh
+          - os: macos-latest
+            shell-name: bash
+            shell-cmd: bash
+          - os: macos-latest
+            shell-name: zsh
+            shell-cmd: zsh
+          
+          # Windows - bash only
+          - os: windows-latest
+            shell-name: bash
+            shell-cmd: bash
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install zsh (Ubuntu only)
+        if: matrix.os == 'ubuntu-latest' && matrix.shell-name == 'zsh'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh
+      
+      - name: Run demo tests (excluding intentional failures)
+        shell: bash
+        working-directory: tests/shell/bash
+        env:
+          OPENDAQ_TESTS_SCRIPTS_DIR: "${{ github.workspace }}/scripts-demo/shell/bash"
+          OPENDAQ_TESTS_SUITES_DIR: "${{ github.workspace }}/tests/shell/bash/suites-demo"
+
+        run: |
+          ${{ matrix.shell-cmd }} ./test-runner.sh \
+            --include-test 'test-basic:*' \
+            --include-test 'test-integration:*' \
+            --include-test 'test-advanced:*' \
+            --include-test 'test-math-utils:*' \
+            --exclude-test '*:test-integration-fail' \
+            --exclude-test '*:test-*-slow' \
+            --fail-fast true
+      
+      - name: Test results summary
+        if: always()
+        shell: bash
+        run: |
+          echo "### Test Results for ${{ matrix.os }} - ${{ matrix.shell-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Framework tests completed" >> $GITHUB_STEP_SUMMARY
