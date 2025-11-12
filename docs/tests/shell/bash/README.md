@@ -425,9 +425,9 @@ export OPENDAQ_TESTS_SUITES_DIR="./suites"
 
 ### Naming Conventions
 
-The test framework follows general project naming conventions with `TESTS` as the module name.
+The test framework follows the [general project conventions](../../../scripts/shell/bash/CONVENTIONS.md) with `TESTS` as the module name.
 
-**Framework functions and variables:**
+**Framework functions and variables** (follow standard conventions):
 - **Public variables**: `OPENDAQ_TESTS_*` (e.g., `OPENDAQ_TESTS_SCRIPTS_DIR`)
 - **Private variables**: `__DAQ_TESTS_*` (e.g., `__DAQ_TESTS_VERBOSE`)
 - **Private functions**: `__daq_tests_*` (e.g., `__daq_tests_log()`)
