@@ -202,5 +202,6 @@ chmod +x version-format.sh
 
 ## 📚 API Documentation
 
-- **[API.md](API.md)** - Complete function reference for script integration
-- **[CONVENTIONS.md](../CONVENTIONS.md)** - Common naming conventions for OpenDAQ bash scripts.
+- [API.md](./API.md) - Complete function reference for script integration
+- [CONVENTIONS.md](./../CONVENTIONS.md) - Common naming conventions for OpenDAQ bash scripts.
+- [README.md](./../../../../../README.md) - Actions overview

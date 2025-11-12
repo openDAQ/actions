@@ -888,5 +888,5 @@ echo "  Architecture: $os_arch"
 
 ## See Also
 
-- [README.md](README.md) - Quick start and CLI usage
-- [CONVENTIONS.md](../CONVENTIONS.md) - Common naming conventions for OpenDAQ bash scripts.
+- [README.md](./README.md) - Quick start and CLI usage
+- [CONVENTIONS.md](./../CONVENTIONS.md) - Common naming conventions for OpenDAQ bash scripts.

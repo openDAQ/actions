@@ -3,9 +3,13 @@ name: Test Bash Framework
 on:
   push:
     branches: [main]
-    paths: [ 'scripts-demo/**', 'tests/shell/bash/**' ]
+    paths:
+      - 'scripts-demo/**/*.sh'
+      - 'tests/shell/bash/**/*.sh'
   pull_request:
-    paths: [ 'scripts-demo/**', 'tests/shell/bash/**' ]
+    paths:
+      - 'scripts-demo/**/*.sh'
+      - 'tests/shell/bash/**/*.sh'
   workflow_dispatch:
 
 jobs:
