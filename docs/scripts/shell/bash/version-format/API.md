@@ -472,5 +472,5 @@ fi
 
 ## See Also
 
-- [README.md](README.md) - Version format utility description
+- [README.md](./README.md) - Version format utility description
 - [CONVENTIONS.md](../CONVENTIONS.md) - Common naming conventions for OpenDAQ bash scripts.
