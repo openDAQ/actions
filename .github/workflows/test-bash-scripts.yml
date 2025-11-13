@@ -34,8 +34,7 @@ jobs:
         working-directory: tests/shell/bash
         run: |
           ./test-runner.sh \
-            --fail-fast true \
-            --verbose
+            --fail-fast true
       
       - name: Test results summary
         if: always()
