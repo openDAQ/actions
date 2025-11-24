@@ -1,0 +1,24 @@
+name: 'Assert openDAQ Version Equals'
+description: 'Verify that installed openDAQ version matches expected version'
+
+inputs:
+  expected-version:
+    description: 'Expected version (with v prefix and optional suffix like v3.30.0-rc)'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Verify Version
+      shell: bash
+      run: |
+        ACTUAL_VERSION=$(dpkg -s opendaq | grep '^Version:' | awk '{print $2}')
+        EXPECTED_VERSION="${{ inputs.expected-version }}"
+        EXPECTED_VERSION="${EXPECTED_VERSION#v}"
+        EXPECTED_VERSION="${EXPECTED_VERSION%%-*}"
+
+        # Assert version matches
+        if [[ "$ACTUAL_VERSION" != "$EXPECTED_VERSION"* ]]; then
+          echo "::error::✗ Version mismatch: expected <$EXPECTED_VERSION> but was <$ACTUAL_VERSION>"
+          exit 1
+        fi

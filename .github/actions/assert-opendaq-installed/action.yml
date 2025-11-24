@@ -1,0 +1,44 @@
+name: 'Assert openDAQ Installed'
+description: 'Verify that openDAQ package is installed on the system'
+
+inputs:
+  is-32bit:
+    description: 'Check for 32-bit installation on Windows'
+    required: false
+    default: false
+
+runs:
+  using: composite
+  steps:
+    - name: Verify Installation (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        if ! dpkg -l | grep -q opendaq; then
+          echo "::error::✗ Package not found"
+          exit 1
+        fi
+
+    - name: Verify Installation (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        if ("${{ inputs.is-32bit }}" -eq "true") {
+          $installPath = "C:\Program Files (x86)\openDAQ"
+          $binPath = "C:\Program Files (x86)\openDAQ\bin"
+        } else {
+          $installPath = "C:\Program Files\openDAQ"
+          $binPath = "C:\Program Files\openDAQ\bin"
+        }
+
+        # Assert installation directory exists
+        if (-not (Test-Path $installPath)) {
+          Write-Host "::error::✗ Installation directory not found: $installPath"
+          exit 1
+        }
+
+        # Assert bin directory is in PATH
+        if ($env:PATH -notlike "*$binPath*") {
+          Write-Host "::error::✗ PATH does not contain: $binPath"
+          exit 1
+        }

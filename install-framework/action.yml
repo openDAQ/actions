@@ -1,0 +1,238 @@
+name: 'Install openDAQ Framework'
+description: 'Download and install openDAQ framework from GitHub releases'
+
+inputs:
+  version:
+    description: 'Framework version (latest, latest-stable, or specific version like v3.30.0)'
+    required: false
+    default: 'latest-stable'
+  enable-32bit:
+    description: 'Enable 32-bit version (only affects Windows, defaults to 64-bit)'
+    required: false
+    default: false
+
+outputs:
+  version:
+    description: 'Resolved framework version'
+    value: ${{ steps.resolve-version.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Version
+      id: resolve-version
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        OPENDAQ_SDK_VERSION: ${{ inputs.version }}
+        VERSION_REGEX: '^(v?)([0-9]+)\.([0-9]+)\.([0-9]+)(-(.+))?$'
+      run: |
+        OPENDAQ_SDK_VERSION="${OPENDAQ_SDK_VERSION:-latest-stable}"
+
+        if [ "$OPENDAQ_SDK_VERSION" = "latest" ]; then
+            echo "Resolving latest release..."
+            OPENDAQ_SDK_VERSION=$(gh release list -R openDAQ/openDAQ --limit 1 --json tagName --jq '.[0].tagName')
+
+            if [ $? -ne 0 ]; then
+                echo "::error::✗ Failed to fetch latest version tag from GitHub releases"
+                exit 1
+            fi
+        elif [ "$OPENDAQ_SDK_VERSION" = "latest-stable" ]; then
+            echo "Resolving latest stable release..."
+            OPENDAQ_SDK_VERSION=$(gh release view -R openDAQ/openDAQ --json tagName --jq '.tagName')
+
+            if [ $? -ne 0 ]; then
+                echo "::error::✗ Failed to fetch latest stable version tag from GitHub releases"
+                exit 1
+            fi
+        fi
+
+        # Validate version format
+        if ! echo "$OPENDAQ_SDK_VERSION" | grep -qE "$VERSION_REGEX"; then
+            echo "::error::✗ Invalid version format: $OPENDAQ_SDK_VERSION"
+            exit 1
+        fi
+
+        echo "✓ Resolved version: $OPENDAQ_SDK_VERSION"
+        echo "version=$OPENDAQ_SDK_VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve Platform
+      id: resolve-platform
+      shell: bash
+      env:
+        RUNNER_OS: ${{ runner.os }}
+        RUNNER_ARCH: ${{ runner.arch }}
+        OPENDAQ_SDK_ENABLE_32BIT: ${{ inputs.enable-32bit }}
+      run: |
+        echo "Resolving platform..."
+
+        case "$RUNNER_ARCH" in
+          X64) arch="x86_64" ;;
+          ARM64) arch="arm64" ;;
+          *)
+            echo "::error::✗ Unsupported architecture: $RUNNER_ARCH"
+            exit 1
+            ;;
+        esac
+
+        case "$RUNNER_OS" in
+          Linux)
+            OPENDAQ_SDK_PLATFORM="ubuntu*-${arch}"
+            OPENDAQ_SDK_FILE_EXT="deb"
+            ;;
+          Windows)
+            if [ "$OPENDAQ_SDK_ENABLE_32BIT" = "true" ]; then
+              OPENDAQ_SDK_PLATFORM="win32"
+            else
+              OPENDAQ_SDK_PLATFORM="win64"
+            fi
+            OPENDAQ_SDK_FILE_EXT="exe"
+            ;;
+          *)
+            echo "::error::✗ Unsupported OS: $RUNNER_OS"
+            exit 1
+            ;;
+        esac
+
+        echo "✓ Platform: $OPENDAQ_SDK_PLATFORM"
+        echo "platform=$OPENDAQ_SDK_PLATFORM" >> $GITHUB_OUTPUT
+        echo "file-ext=$OPENDAQ_SDK_FILE_EXT" >> $GITHUB_OUTPUT
+
+    - name: Resolve Asset URL
+      id: resolve-asset
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        OPENDAQ_SDK_VERSION: ${{ steps.resolve-version.outputs.version }}
+        OPENDAQ_SDK_PLATFORM: ${{ steps.resolve-platform.outputs.platform }}
+        OPENDAQ_SDK_FILE_EXT: ${{ steps.resolve-platform.outputs.file-ext }}
+      run: |
+        # Strip version prefix and suffix for pattern matching
+        ASSET_VERSION="${OPENDAQ_SDK_VERSION#v}"  # Remove 'v' prefix
+        ASSET_VERSION="${ASSET_VERSION%%-*}"      # Remove suffix (e.g., -rc)
+
+        # Build wildcard pattern for asset name
+        ASSET_PATTERN="opendaq-${ASSET_VERSION}-${OPENDAQ_SDK_PLATFORM}.${OPENDAQ_SDK_FILE_EXT}"
+
+        # Convert to regex: escape dots, replace wildcards, add anchors
+        ASSET_REGEX="^${ASSET_PATTERN//./[.]}$"
+        ASSET_REGEX="${ASSET_REGEX//\*/.*}"
+
+        # Find all matching assets
+        ASSETS_VIEW=$(gh release view "$OPENDAQ_SDK_VERSION" \
+            -R openDAQ/openDAQ \
+            --json assets \
+            --jq "[.assets[] | select(.name | test(\"${ASSET_REGEX}\"))]")
+
+        # Check if fetch succeeded
+        if [ -z "$ASSETS_VIEW" ]; then
+            echo "::error::✗ Failed to view GitHub release assets by tag \"$OPENDAQ_SDK_VERSION\" matching pattern \"$ASSET_PATTERN\""
+            exit 1
+        fi
+
+        ASSETS_COUNT=$(echo "$ASSETS_VIEW" | jq 'length')
+
+        if [ "$ASSETS_COUNT" -ne 1 ]; then
+            echo "::error::✗ Expected a single asset for tag \"$OPENDAQ_SDK_VERSION\" matching pattern \"$ASSET_PATTERN\", but found $ASSETS_COUNT"
+            if [ "$ASSETS_COUNT" -gt 0 ]; then
+                echo "  Available assets: $(echo "$ASSETS_VIEW" | jq -r '[.[].name] | join(", ")')"
+            fi
+            exit 1
+        fi
+
+        ASSET_NAME=$(echo "$ASSETS_VIEW" | jq -r '.[0].name')
+        ASSET_URL=$(echo "$ASSETS_VIEW" | jq -r '.[0].url')
+
+        echo "✓ Resolved asset: \"$ASSET_NAME\" at \"$ASSET_URL\""
+        echo "asset-name=$ASSET_NAME" >> "$GITHUB_OUTPUT"
+        echo "asset-url=$ASSET_URL" >> "$GITHUB_OUTPUT"
+
+    - name: Download Asset
+      id: download
+      shell: bash
+      working-directory: ${{ runner.temp }}
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        ASSET_NAME: ${{ steps.resolve-asset.outputs.asset-name }}
+        ASSET_URL: ${{ steps.resolve-asset.outputs.asset-url }}
+      run: |
+        # Check if file already exists
+        if [ -f "$ASSET_NAME" ]; then
+            echo "::error::✗ File already exists: $ASSET_NAME"
+            exit 1
+        fi
+
+        echo "Downloading: $ASSET_NAME"
+        HTTP_CODE=$(curl --fail --location \
+          --write-out "%{http_code}" \
+          --header "Authorization: token $GITHUB_TOKEN" \
+          --output "$ASSET_NAME" \
+          "$ASSET_URL"
+        )
+
+        if [ $? -ne 0 ]; then
+            echo "::error::✗ Download failed with HTTP status: $HTTP_CODE"
+            exit 1
+        fi
+
+        echo "✓ Downloaded: \"$ASSET_NAME\""
+        echo "filename=$ASSET_NAME" >> $GITHUB_OUTPUT
+
+    - name: Install SDK
+      shell: bash
+      working-directory: ${{ runner.temp }}
+      env:
+        ASSET_FILENAME: ${{ steps.download.outputs.filename }}
+        RUNNER_OS: ${{ runner.os }}
+        OPENDAQ_SDK_ENABLE_32BIT: ${{ inputs.enable-32bit }}
+      run: |
+        if [ ! -f "$ASSET_FILENAME" ]; then
+          echo "::error::✗ Downloaded asset not found: $ASSET_FILENAME"
+          exit 1
+        fi
+
+        # Calculate and display SHA256 for verification
+        if command -v sha256sum >/dev/null 2>&1; then
+          ASSET_SHA256=$(sha256sum "$ASSET_FILENAME" | awk '{print $1}')
+        else
+          ASSET_SHA256=$(shasum -a 256 "$ASSET_FILENAME" | awk '{print $1}')
+        fi
+
+        echo "Installing: $ASSET_FILENAME"
+        echo "    SHA256: $ASSET_SHA256"
+        echo "      Size: $(wc -c < "$ASSET_FILENAME") bytes"
+
+        # Install based on file type
+        case "$ASSET_FILENAME" in
+          *.deb)
+            sudo dpkg -i "$ASSET_FILENAME"
+            if [ $? -ne 0 ]; then
+              echo "::error::✗ Installation failed"
+              exit 1
+            fi
+            ;;
+          *.exe)
+            powershell.exe -Command "
+              \$process = Start-Process -FilePath '$ASSET_FILENAME' -ArgumentList '/S' -Wait -NoNewWindow -PassThru;
+              exit \$process.ExitCode
+            "
+            if [ $? -ne 0 ]; then
+              echo "::error::✗ Installation failed with exit code: $?"
+              exit 1
+            fi
+
+            # Add openDAQ to PATH
+            if [ "$OPENDAQ_SDK_ENABLE_32BIT" = "true" ]; then
+              OPENDAQ_BIN_PATH="C:\\Program Files (x86)\\openDAQ\\bin"
+            else
+              OPENDAQ_BIN_PATH="C:\\Program Files\\openDAQ\\bin"
+            fi
+            echo "$OPENDAQ_BIN_PATH" >> "$GITHUB_PATH"
+            ;;
+          *)
+            echo "::error::✗ Unsupported file type: $ASSET_FILENAME"
+            exit 1
+            ;;
+        esac
+
+        echo "✓ Installation complete"

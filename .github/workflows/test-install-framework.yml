@@ -1,0 +1,126 @@
+name: Test Install Framework Action
+
+on:
+  pull_request:
+    paths:
+      - 'install-framework/**'
+      - '.github/workflows/test-install-framework.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'install-framework/**'
+      - '.github/workflows/test-install-framework.yml'
+  workflow_dispatch:
+
+jobs:
+  ubuntu-autodetect:
+    name: Ubuntu Autodetect (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Framework (default version)
+        id: install
+        uses: ./install-framework
+
+      - name: Verify Installation
+        uses: ./.github/actions/assert-opendaq-installed
+
+  ubuntu-versions-explicit:
+    name: Ubuntu Versions Explicit (${{ matrix.version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        version:
+          - v3.30.0
+          - v3.29.0-rc
+          - v3.30.0
+          - v3.19.4-rc
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Framework
+        id: install
+        uses: ./install-framework
+        with:
+          version: ${{ matrix.version }}
+
+      - name: Verify Framework Installed
+        uses: ./.github/actions/assert-opendaq-installed
+
+      - name: Verify Framework Version
+        uses: ./.github/actions/assert-opendaq-version-equals
+        with:
+          expected-version: ${{ matrix.version }}
+
+  ubuntu-versions-aliased:
+    name: Ubuntu Versions Aliased (${{ matrix.version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - latest
+          - latest-stable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Framework
+        id: install
+        uses: ./install-framework
+        with:
+          version: ${{ matrix.version }}
+
+      - name: Verify Framework Installed
+        uses: ./.github/actions/assert-opendaq-installed
+
+      - name: Verify Framework Version
+        uses: ./.github/actions/assert-opendaq-version-equals
+        with:
+          expected-version: ${{ steps.install.outputs.version }}
+
+  windows-autodetect:
+    name: Windows Autodetect
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Framework (default version)
+        id: install
+        uses: ./install-framework
+
+      - name: Verify Framework Installed
+        uses: ./.github/actions/assert-opendaq-installed
+
+  windows-autodetect-version-32bit:
+    name: Windows Autodetect Version (32-bit)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Framework (32-bit)
+        id: install
+        uses: ./install-framework
+        with:
+          enable-32bit: true
+
+      - name: Verify Framework Installed
+        uses: ./.github/actions/assert-opendaq-installed
+        with:
+          is-32bit: true
