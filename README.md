@@ -1,4 +1,3 @@
-[![Test All Actions](https://github.com/openDAQ/actions/actions/workflows/test-all-actions.yml/badge.svg)](https://github.com/openDAQ/actions/actions/workflows/test-all-actions.yml)
 # openDAQ/actions
 
 A collection of reusable GitHub Actions for working with the [openDAQ Framework](https://github.com/openDAQ).
@@ -7,21 +6,15 @@ A collection of reusable GitHub Actions for working with the [openDAQ Framework]
 
 ## 📦 Available Actions
 
-> TODO: put an available actions list here:
+### [install-framework](./install-framework)
 
-- [ ] framework-download-artifact
-- [ ] framework-download-release
-- [ ] framework-install-package
+[![Test Install Framework Action](https://github.com/openDAQ/actions/actions/workflows/test-install-framework.yml/badge.svg)](https://github.com/openDAQ/actions/actions/workflows/test-install-framework.yml)
 
----
+Download and install openDAQ framework packages from GitHub releases.
 
-## 🧪 CI / Testing
-
-We run automated tests for all actions using the **Test All Actions workflow**.
-
-- Runs automatically on `push` to `main` and on `pull_request` events.
-- Ensures that all actions work correctly.
-- See [testing workflow details](./.github/workflows/README.md)
+```yaml
+- uses: openDAQ/actions/install-framework@main
+```
 
 ---
 

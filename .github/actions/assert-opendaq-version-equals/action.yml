@@ -1,0 +1,63 @@
+name: 'Assert openDAQ Version Equals'
+description: 'Verify that installed openDAQ version matches expected version'
+
+inputs:
+  expected-version:
+    description: 'Expected version (with v prefix and optional suffix like v3.30.0-rc)'
+    required: true
+  enable-32bit:
+    description: 'Check 32-bit installation on Windows'
+    required: false
+    default: false
+
+runs:
+  using: composite
+  steps:
+    - name: Verify Version (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        ACTUAL_VERSION=$(dpkg-query -W -f='${Version}' opendaq)
+        EXPECTED_VERSION="${{ inputs.expected-version }}"
+        EXPECTED_VERSION="${EXPECTED_VERSION#v}"
+        EXPECTED_VERSION="${EXPECTED_VERSION%%-*}"
+
+        if [[ "$ACTUAL_VERSION" != "$EXPECTED_VERSION"* ]]; then
+          echo "::error::✗ Version mismatch: expected <$EXPECTED_VERSION> but was <$ACTUAL_VERSION>"
+          exit 1
+        fi
+
+    - name: Verify Version (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        if ("${{ inputs.enable-32bit }}" -eq "true") {
+          $binDir = "C:\Program Files (x86)\openDAQ\bin"
+          $dllPath = "$binDir\opendaq-32-3.dll"
+        } else {
+          $binDir = "C:\Program Files\openDAQ\bin"
+          $dllPath = "$binDir\opendaq-64-3.dll"
+        }
+
+        if (-not (Test-Path $binDir)) {
+          Write-Host "::error::✗ Directory not found: $binDir"
+          exit 1
+        }
+
+        if (-not (Test-Path $dllPath)) {
+          Write-Host "::error::✗ DLL not found: $dllPath"
+          Write-Host "Directory contents:"
+          Get-ChildItem $binDir | ForEach-Object { Write-Host "  $_" }
+          exit 1
+        }
+
+        $actualVersion = (Get-Item $dllPath).VersionInfo.FileVersion
+        $expectedVersion = "${{ inputs.expected-version }}" -replace '^v', '' -replace '-.*$', ''
+
+        # FileVersion is like 3.31.0.0, compare first 3 components
+        $actualMajorMinorPatch = ($actualVersion -split '\.')[0..2] -join '.'
+
+        if ($actualMajorMinorPatch -ne $expectedVersion) {
+          Write-Host "::error::✗ Version mismatch: expected <$expectedVersion> but was <$actualMajorMinorPatch>"
+          exit 1
+        }
