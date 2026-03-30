@@ -7,12 +7,12 @@ on:
         description: "openDAQ commit, branch or tag. If empty, uses the opendaq_ref file from the repo."
         type: string
         default: ''
-      exclude-presets:
-        description: "JSON array of wildcard patterns to exclude presets, e.g. '[\"ci-*-macos-latest-*\", \"ci-test-*\"]'"
+      exclude-configs:
+        description: "JSON array of wildcard patterns to exclude configurations, e.g. '[\"*-debug\", \"macos-*\"]'"
         type: string
         default: '[]'
       packages:
-        description: 'JSON array of package requests, e.g. [{"packages": {"apt": ["libpcap-dev"]}}]'
+        description: 'JSON array of package requests, e.g. [{"runners": ["ubuntu-*"], "packages": {"apt": ["libpcap-dev"]}}]'
         type: string
         default: '[]'
 
@@ -21,60 +21,59 @@ jobs:
     name: Generate matrix
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.filter-jobs.outputs.matrix }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: List available presets
-        id: presets
-        shell: bash
-        run: |
-          cmake_presets=$(cmake --build --list-presets 2>/dev/null | grep '^ ' | sed 's/^ *"//;s/".*$//' | tr '\n' ' ')
-          ctest_presets=$(ctest --list-presets 2>/dev/null | grep '^ ' | sed 's/^ *"//;s/".*$//' | tr '\n' ' ')
-          echo "cmake=$cmake_presets" >> $GITHUB_OUTPUT
-          echo "ctest=$ctest_presets" >> $GITHUB_OUTPUT
-
-      - name: Filter jobs to run
-        id: filter-jobs
+      - name: Generate matrix
+        id: matrix
         shell: python3 {0}
         run: |
           import json, os
           from fnmatch import fnmatch
 
-          available_cmake_presets = set("""${{ steps.presets.outputs.cmake }}""".split())
-          available_ctest_presets = set("""${{ steps.presets.outputs.ctest }}""".split())
-
-          exclude_presets = json.loads("""${{ inputs.exclude-presets }}""")
-
+          exclude_configs = json.loads("""${{ inputs.exclude-configs }}""")
           user_packages = json.loads("""${{ inputs.packages }}""")
 
           default_packages = [
               {
-                  "preset-pattern": "ci-build-ubuntu-latest-*",
+                  "runners": ["ubuntu-*"],
                   "packages": {
                       "apt": [
-                          "mono-runtime",
-                          "libmono-system-json-microsoft4.0-cil",
-                          "libmono-system-data4.0-cil",
-                      ],
-                  },
-              },
+                        "mono-runtime", 
+                        "libmono-system-json-microsoft4.0-cil", 
+                        "libmono-system-data4.0-cil"
+                      ]
+                  }
+              }
           ]
 
           pm_cmds = {
-              "apt": "sudo apt-get update && sudo apt-get install -y --no-install-recommends",
+              "apt": "sudo apt-get install -y --no-install-recommends",
               "brew": "brew install",
               "choco": "choco install -y",
+              "pip": "pip install",
           }
 
-          jobs_matrix = [
-              {"runner": "ubuntu-latest",  "cmake-preset": "ci-build-ubuntu-latest-release",  "ctest-preset": "ci-test-ubuntu-latest-release"},
-              {"runner": "ubuntu-latest",  "cmake-preset": "ci-build-ubuntu-latest-debug",    "ctest-preset": "ci-test-ubuntu-latest-debug"},
-              {"runner": "macos-latest",   "cmake-preset": "ci-build-macos-latest-release",   "ctest-preset": "ci-test-macos-latest-release"},
-              {"runner": "macos-latest",   "cmake-preset": "ci-build-macos-latest-debug",     "ctest-preset": "ci-test-macos-latest-debug"},
-              {"runner": "windows-latest", "cmake-preset": "ci-build-windows-latest-release", "ctest-preset": "ci-test-windows-latest-release"},
-              {"runner": "windows-latest", "cmake-preset": "ci-build-windows-latest-debug",   "ctest-preset": "ci-test-windows-latest-debug"},
-          ]
+          runner_cfg = {
+              "ubuntu-latest": {
+                  "runner": "ubuntu-latest",
+                  "bootstrap": "sudo apt-get update",
+                  "generator": "Ninja",
+                  "c-compiler": "gcc",
+                  "cxx-compiler": "g++",
+              },
+              "windows-latest": {
+                  "runner": "windows-latest",
+                  "generator": "Visual Studio 17 2022",
+              },
+              "macos-latest": {
+                  "runner": "macos-latest",
+                  "generator": "Ninja",
+                  "c-compiler": "/usr/bin/clang",
+                  "cxx-compiler": "/usr/bin/clang++",
+              },
+          }
+
+          build_types = ["Release", "Debug"]
 
           def matches_any(name: str, patterns: list[str]) -> bool:
               return any(fnmatch(name, p) for p in patterns)
@@ -86,39 +85,39 @@ jobs:
               return f"{pm_cmds[pm]} {' '.join(pkgs)}"
 
           matrix = []
-          for job_cfg in jobs_matrix:
-              cmake_preset = job_cfg["cmake-preset"]
-              ctest_preset = job_cfg.get("ctest-preset", "")
+          for cfg_key, cfg in runner_cfg.items():
+              for bt in build_types:
+                  key = f"{cfg_key}-{bt.lower()}"
 
-              # skip if build preset not available or excluded
-              if cmake_preset not in available_cmake_presets:
-                  continue
-              if matches_any(cmake_preset, exclude_presets):
-                  continue
-
-              # merge packages: defaults + user
-              packages: dict[str, list[str]] = {}
-              for req in default_packages + user_packages:
-                  if not matches_any(cmake_preset, [req.get("preset-pattern", "*")]):
+                  if matches_any(key, exclude_configs):
                       continue
-                  for pm, pkgs in req.get("packages", {}).items():
-                      packages.setdefault(pm, []).extend(pkgs)
 
-              # skip test if ctest preset not available or excluded
-              if ctest_preset and (ctest_preset not in available_ctest_presets or matches_any(ctest_preset, exclude_presets)):
-                  ctest_preset = ""
+                  # merge packages: defaults + user
+                  runner = cfg["runner"]
+                  image = cfg.get("image", "")
+                  packages: dict[str, list[str]] = {}
+                  for req in default_packages + user_packages:
+                      runners = req.get("runners", ["*"])
+                      if not any(fnmatch(runner, r) or (image and fnmatch(image, r)) for r in runners):
+                          continue
+                      for pm, pkgs in req.get("packages", {}).items():
+                          packages.setdefault(pm, []).extend(pkgs)
 
-              matrix_job = {
-                  "name": f"{job_cfg['runner']} / {cmake_preset}",
-                  "runner": job_cfg["runner"],
-                  "cmake-preset": cmake_preset,
-                  "ctest-preset": ctest_preset,
-                  "cmd-install-apt": build_install_cmd("apt", packages),
-                  "cmd-install-brew": build_install_cmd("brew", packages),
-                  "cmd-install-choco": build_install_cmd("choco", packages),
-              }
-
-              matrix.append(matrix_job)
+                  matrix.append({
+                      "name": key,
+                      "runner": cfg["runner"],
+                      "image": cfg.get("image", ""),
+                      "bootstrap": cfg.get("bootstrap", ""),
+                      "generator": cfg["generator"],
+                      "c-compiler": cfg.get("c-compiler", ""),
+                      "cxx-compiler": cfg.get("cxx-compiler", ""),
+                      "build-type": bt,
+                      "build-dir": "build",
+                      "cmd-install-apt": build_install_cmd("apt", packages),
+                      "cmd-install-brew": build_install_cmd("brew", packages),
+                      "cmd-install-choco": build_install_cmd("choco", packages),
+                      "cmd-install-pip": build_install_cmd("pip", packages),
+                  })
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"matrix={json.dumps({'include': matrix})}\n")
@@ -128,12 +127,18 @@ jobs:
     if: ${{ needs.generate.outputs.matrix != '' }}
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
+    container:
+      image: ${{ matrix.image }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.generate.outputs.matrix) }}
 
     steps:
+      - name: Bootstrap
+        if: matrix.bootstrap != ''
+        run: ${{ matrix.bootstrap }}
+
       - uses: actions/checkout@v4
 
       - name: Override opendaq_ref
@@ -153,12 +158,84 @@ jobs:
         if: matrix.cmd-install-choco != ''
         run: ${{ matrix.cmd-install-choco }}
 
+      - name: Install dependencies (pip)
+        if: matrix.cmd-install-pip != ''
+        run: ${{ matrix.cmd-install-pip }}
+
+      - name: Detect base presets
+        id: presets
+        shell: bash
+        run: |
+          base_cfg=$(cmake --list-presets 2>/dev/null | grep -o '"module"' | tr -d '"' || true)
+          base_test=$(ctest --list-presets 2>/dev/null | grep -o '"module-test"' | tr -d '"' || true)
+          echo "cmake=$base_cfg" >> $GITHUB_OUTPUT
+          echo "ctest=$base_test" >> $GITHUB_OUTPUT
+
+      - name: Generate CI presets
+        id: generate
+        shell: python3 {0}
+        run: |
+          import json, os
+
+          name = "${{ matrix.name }}"
+          base_cfg = "${{ steps.presets.outputs.cmake }}"
+          base_test = "${{ steps.presets.outputs.ctest }}"
+
+          cfg_preset = f"ci-cfg-{name}"
+          build_preset = f"ci-build-{name}"
+          test_preset = f"ci-test-{name}" if base_test else ""
+
+          presets = {
+              "version": 4,
+              "configurePresets": [{
+                  "name": cfg_preset,
+                  **({"inherits": [base_cfg]} if base_cfg else {}),
+                  "generator": "${{ matrix.generator }}",
+                  "binaryDir": "$" + "{sourceDir}" + "/${{ matrix.build-dir }}",
+                  "cacheVariables": {
+                      "CMAKE_BUILD_TYPE": "${{ matrix.build-type }}",
+                      **({
+                          "CMAKE_C_COMPILER": "${{ matrix.c-compiler }}",
+                          "CMAKE_CXX_COMPILER": "${{ matrix.cxx-compiler }}",
+                      } if "${{ matrix.c-compiler }}" else {}),
+                  },
+              }],
+              "buildPresets": [{
+                  "name": build_preset,
+                  "configurePreset": cfg_preset,
+                  "configuration": "${{ matrix.build-type }}",
+              }],
+          }
+
+          if base_test:
+              presets["testPresets"] = [{
+                  "name": test_preset,
+                  "inherits": [base_test],
+                  "configurePreset": cfg_preset,
+                  "configuration": "${{ matrix.build-type }}",
+              }]
+
+          with open("CMakeUserPresets.json", "w") as f:
+              json.dump(presets, f, indent=2)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"cmake-user-cfg={cfg_preset}\n")
+              f.write(f"cmake-user-build={build_preset}\n")
+              f.write(f"ctest-user={test_preset}\n")
+
+      - name: Upload CI presets
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-presets-${{ matrix.name }}
+          path: CMakeUserPresets.json
+          retention-days: 7
+
       - name: Configure
-        run: cmake --preset ${{ matrix.cmake-preset }}
+        run: cmake --preset ${{ steps.generate.outputs.cmake-user-cfg }}
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.cmake-preset }}
+        run: cmake --build --preset ${{ steps.generate.outputs.cmake-user-build }}
 
       - name: Test
-        if: matrix.ctest-preset != ''
-        run: ctest --preset ${{ matrix.ctest-preset }}
+        if: steps.generate.outputs.ctest-user != ''
+        run: ctest --preset ${{ steps.generate.outputs.ctest-user }}
