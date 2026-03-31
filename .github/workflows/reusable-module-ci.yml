@@ -53,7 +53,7 @@ jobs:
           ]
 
           pm_cmds = {
-              "apt": "sudo apt-get install -y --no-install-recommends",
+              "apt": "sudo -E apt-get install -y --no-install-recommends",
               "brew": "brew install",
               "choco": "choco install -y",
               "pip": "pip install",
@@ -66,6 +66,30 @@ jobs:
                   "generator": "Ninja",
                   "c-compiler": "gcc",
                   "cxx-compiler": "g++",
+              },
+              "ubuntu-20.04-gcc-7": {
+                  "runner": "ubuntu-latest",
+                  "image": "ubuntu:20.04",
+                  "bootstrap": "apt-get update && apt-get install -y git sudo",
+                  "generator": "Ninja",
+                  "c-compiler": "gcc-7",
+                  "cxx-compiler": "g++-7",
+                  "packages": {
+                      "apt": ["gcc-7", "g++-7", "python3-pip"],
+                      "pip": ["cmake", "ninja"],
+                  },
+              },
+              "ubuntu-20.04-clang-8": {
+                  "runner": "ubuntu-latest",
+                  "image": "ubuntu:20.04",
+                  "bootstrap": "apt-get update && apt-get install -y git sudo",
+                  "generator": "Ninja",
+                  "c-compiler": "clang-8",
+                  "cxx-compiler": "clang++-8",
+                  "packages": {
+                      "apt": ["clang-8", "python3-pip"],
+                      "pip": ["cmake", "ninja"],
+                  },
               },
               "windows-latest": {
                   "runner": "windows-latest",
@@ -104,10 +128,12 @@ jobs:
                   if matches_any(key, exclude_configs):
                       continue
 
-                  # merge packages: defaults + user
+                  # merge packages: runner_cfg + defaults + user
                   runner = cfg["runner"]
                   image = cfg.get("image", "")
                   packages: dict[str, list[str]] = {}
+                  for pm, pkgs in cfg.get("packages", {}).items():
+                      packages.setdefault(pm, []).extend(pkgs)
                   for req in default_packages + user_packages:
                       runners = req.get("runners", ["*"])
                       if not any(fnmatch(runner, r) or (image and fnmatch(image, r)) for r in runners):
@@ -141,6 +167,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     container:
       image: ${{ matrix.image }}
+      env:
+        DEBIAN_FRONTEND: noninteractive
+        TZ: Europe/Berlin
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -151,7 +180,7 @@ jobs:
         if: matrix.bootstrap != ''
         run: ${{ matrix.bootstrap }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Override opendaq_ref
         if: ${{ inputs.opendaq-ref != '' }}
@@ -226,15 +255,15 @@ jobs:
           with open("CMakeUserPresets.json", "w") as f:
               json.dump(presets, f, indent=2)
 
-          gtest_output = os.path.join("${{ github.workspace }}", "build", "test-results", "gtest") + os.sep
+          test_results_dir = os.path.join(os.environ["GITHUB_WORKSPACE"], "build", "test-results") + os.sep
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"cmake={preset}\n")
               f.write(f"ctest={preset if preset_base_ctest else ''}\n")
-              f.write(f"gtest-output=xml:{gtest_output}\n")
+              f.write(f"test-results-dir={test_results_dir}\n")
 
       - name: Upload CI presets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ci-preset-${{ matrix.name }}
           path: CMakeUserPresets.json
@@ -249,13 +278,13 @@ jobs:
       - name: Test
         if: steps.generate.outputs.ctest != ''
         env:
-          GTEST_OUTPUT: ${{ steps.generate.outputs.gtest-output }}
+          GTEST_OUTPUT: xml:${{ steps.generate.outputs.test-results-dir }}
         run: ctest --preset ${{ steps.generate.outputs.ctest }}
 
       - name: Upload test results
         if: ${{ !cancelled() && steps.generate.outputs.ctest != '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-results-${{ matrix.name }}
-          path: build/test-results/
+          path: ${{ steps.generate.outputs.test-results-dir }}
           retention-days: 7
