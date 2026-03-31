@@ -38,12 +38,18 @@ jobs:
                   "runners": ["ubuntu-*"],
                   "packages": {
                       "apt": [
-                        "mono-runtime", 
-                        "libmono-system-json-microsoft4.0-cil", 
+                        "mono-runtime",
+                        "libmono-system-json-microsoft4.0-cil",
                         "libmono-system-data4.0-cil"
                       ]
                   }
-              }
+              },
+              {
+                  "runners": ["macos-*"],
+                  "packages": {
+                      "brew": ["mono"]
+                  }
+              },
           ]
 
           pm_cmds = {
