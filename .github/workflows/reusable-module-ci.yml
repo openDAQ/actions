@@ -77,6 +77,12 @@ jobs:
                   "c-compiler": "/usr/bin/clang",
                   "cxx-compiler": "/usr/bin/clang++",
               },
+              "macos-26-intel": {
+                  "runner": "macos-26-intel",
+                  "generator": "Ninja",
+                  "c-compiler": "/usr/bin/clang",
+                  "cxx-compiler": "/usr/bin/clang++",
+              },
           }
 
           build_types = ["Release", "Debug"]
@@ -118,7 +124,7 @@ jobs:
                       "c-compiler": cfg.get("c-compiler", ""),
                       "cxx-compiler": cfg.get("cxx-compiler", ""),
                       "build-type": bt,
-                      "build-dir": "build",
+                      "build-dir": "build/output",
                       "cmd-install-apt": build_install_cmd("apt", packages),
                       "cmd-install-brew": build_install_cmd("brew", packages),
                       "cmd-install-choco": build_install_cmd("choco", packages),
@@ -172,10 +178,10 @@ jobs:
         id: presets
         shell: bash
         run: |
-          base_cfg=$(cmake --list-presets 2>/dev/null | grep -o '"module"' | tr -d '"' || true)
-          base_test=$(ctest --list-presets 2>/dev/null | grep -o '"module-test"' | tr -d '"' || true)
-          echo "cmake=$base_cfg" >> $GITHUB_OUTPUT
-          echo "ctest=$base_test" >> $GITHUB_OUTPUT
+          preset_base_cmake=$(cmake --list-presets 2>/dev/null | grep -o '"module"' | tr -d '"' || true)
+          preset_base_ctest=$(ctest --list-presets 2>/dev/null | grep -o '"module-test"' | tr -d '"' || true)
+          echo "base-cmake=$preset_base_cmake" >> $GITHUB_OUTPUT
+          echo "base-ctest=$preset_base_ctest" >> $GITHUB_OUTPUT
 
       - name: Generate CI presets
         id: generate
@@ -183,19 +189,15 @@ jobs:
         run: |
           import json, os
 
-          name = "${{ matrix.name }}"
-          base_cfg = "${{ steps.presets.outputs.cmake }}"
-          base_test = "${{ steps.presets.outputs.ctest }}"
-
-          cfg_preset = f"ci-cfg-{name}"
-          build_preset = f"ci-build-{name}"
-          test_preset = f"ci-test-{name}" if base_test else ""
+          preset = "ci-generated"
+          preset_base_cmake = "${{ steps.presets.outputs.base-cmake }}"
+          preset_base_ctest = "${{ steps.presets.outputs.base-ctest }}"
 
           presets = {
               "version": 4,
               "configurePresets": [{
-                  "name": cfg_preset,
-                  **({"inherits": [base_cfg]} if base_cfg else {}),
+                  "name": preset,
+                  **({"inherits": [preset_base_cmake]} if preset_base_cmake else {}),
                   "generator": "${{ matrix.generator }}",
                   "binaryDir": "$" + "{sourceDir}" + "/${{ matrix.build-dir }}",
                   "cacheVariables": {
@@ -207,41 +209,53 @@ jobs:
                   },
               }],
               "buildPresets": [{
-                  "name": build_preset,
-                  "configurePreset": cfg_preset,
+                  "name": preset,
+                  "configurePreset": preset,
                   "configuration": "${{ matrix.build-type }}",
               }],
           }
 
-          if base_test:
+          if preset_base_ctest:
               presets["testPresets"] = [{
-                  "name": test_preset,
-                  "inherits": [base_test],
-                  "configurePreset": cfg_preset,
+                  "name": preset,
+                  "inherits": [preset_base_ctest],
+                  "configurePreset": preset,
                   "configuration": "${{ matrix.build-type }}",
               }]
 
           with open("CMakeUserPresets.json", "w") as f:
               json.dump(presets, f, indent=2)
 
+          gtest_output = os.path.join("${{ github.workspace }}", "build", "test-results", "gtest") + os.sep
+
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"cmake-user-cfg={cfg_preset}\n")
-              f.write(f"cmake-user-build={build_preset}\n")
-              f.write(f"ctest-user={test_preset}\n")
+              f.write(f"cmake={preset}\n")
+              f.write(f"ctest={preset if preset_base_ctest else ''}\n")
+              f.write(f"gtest-output=xml:{gtest_output}\n")
 
       - name: Upload CI presets
         uses: actions/upload-artifact@v4
         with:
-          name: ci-presets-${{ matrix.name }}
+          name: ci-preset-${{ matrix.name }}
           path: CMakeUserPresets.json
           retention-days: 7
 
       - name: Configure
-        run: cmake --preset ${{ steps.generate.outputs.cmake-user-cfg }}
+        run: cmake --preset ${{ steps.generate.outputs.cmake }}
 
       - name: Build
-        run: cmake --build --preset ${{ steps.generate.outputs.cmake-user-build }}
+        run: cmake --build --preset ${{ steps.generate.outputs.cmake }}
 
       - name: Test
-        if: steps.generate.outputs.ctest-user != ''
-        run: ctest --preset ${{ steps.generate.outputs.ctest-user }}
+        if: steps.generate.outputs.ctest != ''
+        env:
+          GTEST_OUTPUT: ${{ steps.generate.outputs.gtest-output }}
+        run: ctest --preset ${{ steps.generate.outputs.ctest }}
+
+      - name: Upload test results
+        if: ${{ !cancelled() && steps.generate.outputs.ctest != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.name }}
+          path: build/test-results/
+          retention-days: 7
