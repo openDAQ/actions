@@ -79,15 +79,15 @@ jobs:
                       "pip": ["cmake", "ninja"],
                   },
               },
-              "ubuntu-20.04-clang-8": {
+              "ubuntu-20.04-clang-9": {
                   "runner": "ubuntu-latest",
                   "image": "ubuntu:20.04",
                   "bootstrap": "apt-get update && apt-get install -y git sudo",
                   "generator": "Ninja",
-                  "c-compiler": "clang-8",
-                  "cxx-compiler": "clang++-8",
+                  "c-compiler": "clang-9",
+                  "cxx-compiler": "clang++-9",
                   "packages": {
-                      "apt": ["clang-8", "python3-pip"],
+                      "apt": ["clang-9", "python3-pip"],
                       "pip": ["cmake", "ninja"],
                   },
               },
