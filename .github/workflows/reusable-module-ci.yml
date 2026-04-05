@@ -37,11 +37,8 @@ jobs:
           exclude_jobs = json.loads("""${{ inputs.exclude-jobs }}""")
           user_packages = json.loads("""${{ inputs.packages }}""")
 
-          cmake_presets = json.loads("""${{ inputs.cmake-presets }}""")
-
           print(f"Input: exclude-jobs = {json.dumps(exclude_jobs) if exclude_jobs else 'None'}")
           print(f"Input: packages = {json.dumps(user_packages) if user_packages else 'None'}")
-          print(f"Input: cmake-presets = {json.dumps(cmake_presets) if cmake_presets else 'None'}")
 
           # --- General config ---
 
@@ -60,9 +57,9 @@ jobs:
               "cmd-pip-install": "pip install",
               "cmd-brew-install": "brew install",
               "cmd-choco-install": "choco install -y",
-              "apt-install-default": ["mono-runtime", "libmono-system-json-microsoft4.0-cil", "libmono-system-data4.0-cil"],
-              "pip-install-default": ["cmake", "ninja"],
-              "brew-install-default": ["mono"],
+              "apt-install-default": [],
+              "pip-install-default": [],
+              "brew-install-default": [],
               "apt-install": [],
               "brew-install": [],
               "choco-install": [],
@@ -71,43 +68,40 @@ jobs:
 
           # --- Ubuntu configs ---
 
-          _ubuntu_host_x86_64 = {
+          _ubuntu_guest_x86_64_ninja = {
               **_base,
               "runner": "ubuntu-latest",
-              "bootstrap": "sudo apt-get update",
+              "bootstrap": "apt-get update && apt-get install -y git",
               "package-managers": ["apt", "pip"],
-              "cmd-sudo": "sudo",
+              "cmd-sudo": "",
               "generator": "Ninja",
               "cc": "gcc",
               "cxx": "g++",
+              "apt-install-default": ["mono-runtime", "libmono-system-json-microsoft4.0-cil", "libmono-system-data4.0-cil", "python3-pip"],
+              "pip-install-default": ["cmake", "ninja"],
           }
 
-          _ubuntu_guest_x86_64 = {
-              **_ubuntu_host_x86_64,
-              "bootstrap": "apt-get update && apt-get install -y git",
-              "apt-install-default": [*_base["apt-install-default"], "python3-pip"],
-              "cmd-sudo": "",
-          }
-
-          _ubuntu_20_04_x86_64 = { **_ubuntu_guest_x86_64, "image": "ubuntu:20.04" }
-          _ubuntu_24_04_x86_64 = { **_ubuntu_guest_x86_64, "image": "ubuntu:24.04", "cmd-pip-install": "pip install --break-system-packages" }
+          _ubuntu_20_04_x86_64_ninja = { **_ubuntu_guest_x86_64_ninja, "image": "ubuntu:20.04" }
+          _ubuntu_24_04_x86_64_ninja = { **_ubuntu_guest_x86_64_ninja, "image": "ubuntu:24.04", "cmd-pip-install": "pip install --break-system-packages" }
 
           # --- macOS configs ---
 
-          _macos = {
+          _macos_ninja = { 
               **_base,
               "package-managers": ["brew", "pip"],
-              "generator": "Ninja",
+              "brew-install-default": ["mono"],              
+              "generator": "Ninja", 
+              "pip-install-default": ["cmake", "ninja"]
           }
 
-          _macos_15_armv8   = {**_macos, "runner": "macos-15"}
-          _macos_15_x86_64  = {**_macos, "runner": "macos-15-intel"}
-          _macos_26_armv8   = {**_macos, "runner": "macos-26"}
-          _macos_26_x86_64  = {**_macos, "runner": "macos-26-intel"}
+          _macos_15_armv8_ninja   = {**_macos_ninja, "runner": "macos-15"}
+          _macos_15_x86_64_ninja  = {**_macos_ninja, "runner": "macos-15-intel"}
+          _macos_26_armv8_ninja   = {**_macos_ninja, "runner": "macos-26"}
+          _macos_26_x86_64_ninja  = {**_macos_ninja, "runner": "macos-26-intel"}
 
           # --- Windows configs ---
 
-          _windows_2025_x86_64 = {
+          _windows_2025_x86_64_msvs = {
               **_base,
               "runner": "windows-2025",
               "generator": "Visual Studio 17 2022",
@@ -118,17 +112,17 @@ jobs:
           # --- Jobs configs ---
 
           jobs_cfg = {
-              "windows-2025-x86_64-msvc-v143":  {**_windows_2025_x86_64,  "toolset": "v143"},
+              "windows-2025-x86_64-msvs-v143":        {**_windows_2025_x86_64_msvs,  "toolset": "v143"},
 
-              "ubuntu-20.04-x86_64-gcc-7":      {**_ubuntu_20_04_x86_64,  "cc": "gcc-7",          "cxx": "g++-7",       "apt-install": ["gcc-7", "g++-7"]},
-              "ubuntu-20.04-x86_64-clang-9":    {**_ubuntu_20_04_x86_64,  "cc": "clang-9",        "cxx": "clang++-9",   "apt-install": ["clang-9"]},
-              "ubuntu-24.04-x86_64-gcc-14":     {**_ubuntu_24_04_x86_64,  "cc": "gcc-14",         "cxx": "g++-14",      "apt-install": ["gcc-14", "g++-14"]},
-              "ubuntu-24.04-x86_64-clang-18":   {**_ubuntu_24_04_x86_64,  "cc": "clang-18",       "cxx": "clang++-18",  "apt-install": ["clang-18"]},
-              
-              "macos-15-armv8-appleclang":      {**_macos_15_armv8,       "cc": "/usr/bin/clang", "cxx": "/usr/bin/clang++"},
-              "macos-15-x86_64-appleclang":     {**_macos_15_x86_64,      "cc": "/usr/bin/clang", "cxx": "/usr/bin/clang++"},
-              "macos-26-armv8-appleclang":      {**_macos_26_armv8,       "cc": "/usr/bin/clang", "cxx": "/usr/bin/clang++"},
-              "macos-26-x86_64-appleclang":     {**_macos_26_x86_64,      "cc": "/usr/bin/clang", "cxx": "/usr/bin/clang++"},
+              "ubuntu-20.04-x86_64-ninja-gcc-7":      {**_ubuntu_20_04_x86_64_ninja,  "cc": "gcc-7",          "cxx": "g++-7",       "apt-install": ["gcc-7", "g++-7"]},
+              "ubuntu-20.04-x86_64-ninja-clang-9":    {**_ubuntu_20_04_x86_64_ninja,  "cc": "clang-9",        "cxx": "clang++-9",   "apt-install": ["clang-9"]},
+              "ubuntu-24.04-x86_64-ninja-gcc-14":     {**_ubuntu_24_04_x86_64_ninja,  "cc": "gcc-14",         "cxx": "g++-14",      "apt-install": ["gcc-14", "g++-14"]},
+              "ubuntu-24.04-x86_64-ninja-clang-18":   {**_ubuntu_24_04_x86_64_ninja,  "cc": "clang-18",       "cxx": "clang++-18",  "apt-install": ["clang-18"]},
+
+              "macos-15-armv8-ninja-appleclang":      {**_macos_15_armv8_ninja,       "cc": "/usr/bin/clang", "cxx": "/usr/bin/clang++"},
+              "macos-15-x86_64-ninja-appleclang":     {**_macos_15_x86_64_ninja,      "cc": "/usr/bin/clang", "cxx": "/usr/bin/clang++"},
+              "macos-26-armv8-ninja-appleclang":      {**_macos_26_armv8_ninja,       "cc": "/usr/bin/clang", "cxx": "/usr/bin/clang++"},
+              "macos-26-x86_64-ninja-appleclang":     {**_macos_26_x86_64_ninja,      "cc": "/usr/bin/clang", "cxx": "/usr/bin/clang++"},
           }
 
           # --- Generate jobs matrix ---
@@ -142,7 +136,7 @@ jobs:
                   job_name = f"{cfg_key}-{build_type.lower()}"
 
                   if matches_any(job_name, exclude_jobs):
-                      print(f"XMatrix job '{job_name}': skipped by 'exclude-jobs' input")
+                      print(f"Matrix job '{job_name}': skipped by 'exclude-jobs' input")
                       continue
 
                   supported_pms = set(cfg.get("package-managers", []))
@@ -205,6 +199,8 @@ jobs:
 
           cmake_presets = json.loads("""${{ inputs.cmake-presets }}""")
           matrix = json.loads("""${{ steps.matrix.outputs.matrix }}""")["include"]
+
+          print(f"Input: cmake-presets = {json.dumps(cmake_presets) if cmake_presets else 'None'}")
 
           build_dir = "build/output"
           user_presets = {"version": 4, "configurePresets": [], "buildPresets": [], "testPresets": []}
@@ -310,9 +306,6 @@ jobs:
     runs-on: ${{ matrix.runner }}
     container:
       image: ${{ matrix.image }}
-      env:
-        DEBIAN_FRONTEND: noninteractive
-        TZ: Europe/Berlin
     timeout-minutes: 120
     strategy:
       fail-fast: false
