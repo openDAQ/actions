@@ -12,13 +12,17 @@ on:
         type: string
         default: '[]'
       packages:
-        description: 'JSON array of package requests, e.g. [{"jobs": ["ubuntu-*"], "apt-install": ["libpcap-dev"]}]'
+        description: 'JSON array of package requests, e.g. [{"match-jobs": ["ubuntu-*"], "apt-install": ["libpcap-dev"]}]'
+        type: string
+        default: '[]'
+      cmake-presets:
+        description: 'JSON array of preset configs, e.g. [{"match-jobs": ["*"], "configure-preset": "module", "test-preset": "module-test"}]'
         type: string
         default: '[]'
 
 jobs:
   generate:
-    name: Generate matrix
+    name: Generate
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
@@ -33,8 +37,11 @@ jobs:
           exclude_jobs = json.loads("""${{ inputs.exclude-jobs }}""")
           user_packages = json.loads("""${{ inputs.packages }}""")
 
-          print(f"::notice::Input: exclude-jobs = {json.dumps(exclude_jobs) if exclude_jobs else 'None'}")
-          print(f"::notice::Input: packages = {json.dumps(user_packages) if user_packages else 'None'}")
+          cmake_presets = json.loads("""${{ inputs.cmake-presets }}""")
+
+          print(f"Input: exclude-jobs = {json.dumps(exclude_jobs) if exclude_jobs else 'None'}")
+          print(f"Input: packages = {json.dumps(user_packages) if user_packages else 'None'}")
+          print(f"Input: cmake-presets = {json.dumps(cmake_presets) if cmake_presets else 'None'}")
 
           # --- General config ---
 
@@ -132,10 +139,10 @@ jobs:
           matrix = []
           for cfg_key, cfg in jobs_cfg.items():
               for build_type in ["Release", "Debug"]:
-                  job_id = f"{cfg_key}-{build_type.lower()}"
+                  job_name = f"{cfg_key}-{build_type.lower()}"
 
-                  if matches_any(job_id, exclude_jobs):
-                      print(f"::notice::Matrix job '{job_id}': skipped by 'exclude-jobs' input")
+                  if matches_any(job_name, exclude_jobs):
+                      print(f"XMatrix job '{job_name}': skipped by 'exclude-jobs' input")
                       continue
 
                   supported_pms = set(cfg.get("package-managers", []))
@@ -143,14 +150,14 @@ jobs:
                   # collect user packages for this job
                   user_pkgs = {}
                   for req in user_packages:
-                      if not matches_any(job_id, req.get("jobs", ["*"])):
+                      if not matches_any(job_name, req.get("match-jobs", ["*"])):
                           continue
                       
                       user_install = {k: v for k, v in req.items() if k.endswith("-install") and v}
                       for k, v in user_install.items():
                           pm = k.removesuffix("-install")
                           if pm not in supported_pms:
-                              print(f"::warning::Matrix job '{job_id}': '{pm}' is not supported by this runner, skipping installation of {v}")
+                              print(f"::warning::Matrix job '{job_name}': '{pm}' is not supported by this runner, skipping installation of {v}")
                               continue
                           user_pkgs.setdefault(k, []).extend(v)
 
@@ -164,7 +171,7 @@ jobs:
                       if install:
                           cmd = cfg.get(f"cmd-{pm}-install", "")
                           if not cmd:
-                              print(f"::error::Matrix job '{job_id}': 'cmd-{pm}-install' is not defined but packages {install} are requested")
+                              print(f"::error::Matrix job '{job_name}': 'cmd-{pm}-install' is not defined but packages {install} are requested")
                           else:
                               parts = [envs, cmd, *install]
                               if pm == "apt" and sudo:
@@ -172,7 +179,7 @@ jobs:
                               install_cmds[f"cmd-install-{pm}"] = " ".join(p for p in parts if p)
 
                   matrix.append({
-                      "name": job_id,
+                      "name": job_name,
                       "runner": cfg["runner"],
                       "image": cfg.get("image") or "",
                       "bootstrap": cfg.get("bootstrap") or "",
@@ -187,52 +194,109 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"matrix={json.dumps({'include': matrix})}\n")
 
-          matrix_json = json.dumps({"include": matrix}, indent=2)
+          print(f"Output: matrix = {json.dumps({'include': matrix}, indent=2)}")
 
-          with open("matrix.json", "w") as f:
-              f.write(matrix_json)
+      - name: Generate user presets
+        id: presets
+        shell: python3 {0}
+        run: |
+          import json
+          from fnmatch import fnmatch
 
-          print(matrix_json)
+          cmake_presets = json.loads("""${{ inputs.cmake-presets }}""")
+          matrix = json.loads("""${{ steps.matrix.outputs.matrix }}""")["include"]
 
-      - name: Upload matrix
+          build_dir = "build/output"
+          user_presets = {"version": 4, "configurePresets": [], "buildPresets": [], "testPresets": []}
+
+          for entry in matrix:
+              name = entry["name"]
+              build_type = entry.get("build-type") or ""
+              generator = entry.get("generator") or ""
+              toolset = entry.get("toolset") or ""
+              cc = entry.get("cc") or ""
+              cxx = entry.get("cxx") or ""
+
+              # find matching cmake-presets config
+              configure_preset = ""
+              test_preset = ""
+              for req in cmake_presets:
+                  if any(fnmatch(name, p) for p in req.get("match-jobs", ["*"])):
+                      configure_preset = req.get("configure-preset", configure_preset)
+                      test_preset = req.get("test-preset", test_preset)
+
+              user_presets["configurePresets"].append({
+                  "name": name,
+                  **({"inherits": [configure_preset]} if configure_preset else {}),
+                  **({"generator": generator} if generator else {}),
+                  **({"toolset": toolset} if toolset else {}),
+                  "binaryDir": "$" + "{sourceDir}" + f"/{build_dir}",
+                  "cacheVariables": {
+                      **({"CMAKE_BUILD_TYPE": build_type} if build_type else {}),
+                      **({"CMAKE_C_COMPILER": cc} if cc else {}),
+                      **({"CMAKE_CXX_COMPILER": cxx} if cxx else {}),
+                  },
+              })
+
+              user_presets["buildPresets"].append({
+                  "name": name,
+                  "configurePreset": name,
+                  **({"configuration": build_type} if build_type else {}),
+              })
+
+              if test_preset:
+                  user_presets["testPresets"].append({
+                      "name": name,
+                      "configurePreset": name,
+                      "inherits": [test_preset],
+                      **({"configuration": build_type} if build_type else {}),
+                  })
+
+          with open("CMakeUserPresets.json", "w") as f:
+              json.dump(user_presets, f, indent=2)
+
+      - name: Upload presets
         uses: actions/upload-artifact@v6
         with:
-          name: matrix
-          path: matrix.json
+          name: CMakeUserPresets
+          path: CMakeUserPresets.json
           retention-days: 7
 
       - name: Job summary
         if: always()
         shell: bash
         run: |
+          s() { [ "$1" = "success" ] && echo "✅" || ([ "$1" = "skipped" ] && echo "➖" || echo "❌"); }
+          overall="✅"
+          [[ "${{ steps.matrix.outcome }}" == "failure" || "${{ steps.presets.outcome }}" == "failure" ]] && overall="❌"
           {
-            echo "## Generate Matrix"
-            echo "| Step | Status |"
-            echo "|------|--------|"
-            echo "| 🔧 Generate | ${{ steps.matrix.outcome == 'success' && '✅' || '❌' }} |"
+            echo "<details><summary>${overall} Generate job inputs</summary>"
             echo ""
-            echo "**opendaq-ref:** \`${{ inputs.opendaq-ref || 'default' }}\`"
-            echo ""
-            echo "<details><summary>📥 exclude-jobs</summary>"
-            echo ""
-            echo '```json'
-            echo '${{ inputs.exclude-jobs }}' | jq . 2>/dev/null || echo '[]'
+            echo '```yaml'
+            echo "on:"
+            echo "  workflow_call:"
+            echo "    inputs:"
+            echo "      opendaq-ref: ${{ inputs.opendaq-ref || '\"\"' }}"
+            echo "      exclude-jobs: '${{ inputs.exclude-jobs || '[]' }}'"
+            echo "      packages: '${{ inputs.packages || '[]' }}'"
+            echo "      cmake-presets: '${{ inputs.cmake-presets || '[]' }}'"
             echo '```'
             echo ""
             echo "</details>"
             echo ""
-            echo "<details><summary>📦 packages</summary>"
+            echo "<details><summary>$(s ${{ steps.matrix.outcome }}) Generate matrix (matrix.json)</summary>"
             echo ""
             echo '```json'
-            echo '${{ inputs.packages }}' | jq . 2>/dev/null || echo '[]'
+            echo '${{ steps.matrix.outputs.matrix }}' | jq . 2>/dev/null || echo "Not generated"
+            echo ""
             echo '```'
             echo ""
             echo "</details>"
             echo ""
-            echo "<details><summary>📋 matrix.json</summary>"
+            echo "<details><summary>$(s ${{ steps.presets.outcome }}) Generate presets (CMakeUserPresets.json)</summary>"
             echo ""
             echo '```json'
-            cat matrix.json 2>/dev/null || echo "Not generated"
+            cat CMakeUserPresets.json 2>/dev/null || echo "Not generated"
             echo ""
             echo '```'
             echo ""
@@ -282,119 +346,84 @@ jobs:
         if: matrix.cmd-install-pip != ''
         run: ${{ matrix.cmd-install-pip }}
 
-      - name: Detect base presets
-        id: presets
+      - name: Download CI presets
+        uses: actions/download-artifact@v6
+        with:
+          name: CMakeUserPresets
+
+      - name: Detect tests
+        id: detect-tests
         shell: bash
         run: |
-          base_cmake=$(cmake --list-presets 2>/dev/null | grep -o '"module"' | tr -d '"' || true)
-          base_ctest=$(ctest --list-presets 2>/dev/null | grep -o '"module-test"' | tr -d '"' || true)
-          echo "base-cmake=$base_cmake" >> $GITHUB_OUTPUT
-          echo "base-ctest=$base_ctest" >> $GITHUB_OUTPUT
-
-      - name: Generate CI presets
-        id: generate
-        shell: python3 {0}
-        run: |
-          import json, os
-
-          preset = "ci-generated"
-          build_dir = "build/output"
-          base_cmake = "${{ steps.presets.outputs.base-cmake }}"
-          base_ctest = "${{ steps.presets.outputs.base-ctest }}"
-
-          build_type = "${{ matrix.build-type }}"
-          cc = "${{ matrix.cc }}"
-          cxx = "${{ matrix.cxx }}"
-          generator = "${{ matrix.generator }}"
-          toolset = "${{ matrix.toolset }}"
-
-          presets = {
-              "version": 4,
-              "configurePresets": [{
-                  "name": preset,
-                  **({"inherits": [base_cmake]} if base_cmake else {}),
-                  **({"generator": generator} if generator else {}),
-                  **({"toolset": toolset} if toolset else {}),
-                  "binaryDir": "$" + "{sourceDir}" + f"/{build_dir}",
-                  "cacheVariables": {
-                      **({"CMAKE_BUILD_TYPE": build_type} if build_type else {}),
-                      **({"CMAKE_C_COMPILER": cc} if cc else {}),
-                      **({"CMAKE_CXX_COMPILER": cxx} if cxx else {}),
-                  },
-              }],
-              "buildPresets": [{
-                  "name": preset,
-                  "configurePreset": preset,
-                  **({"configuration": build_type} if build_type else {}),
-              }],
-          }
-
-          if base_ctest:
-              presets["testPresets"] = [{
-                  "name": preset,
-                  "configurePreset": preset,
-                  "inherits": [base_ctest],
-                  **({"configuration": build_type} if build_type else {}),
-              }]
-
-          with open("CMakeUserPresets.json", "w") as f:
-              json.dump(presets, f, indent=2)
-
-          test_results_dir = os.path.join(os.environ["GITHUB_WORKSPACE"], "build", "test-results") + os.sep
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"cmake={preset}\n")
-              f.write(f"ctest={preset if base_ctest else ''}\n")
-              f.write(f"test-results-dir={test_results_dir}\n")
-
-      - name: Upload CI presets
-        uses: actions/upload-artifact@v6
-        with:
-          name: ci-preset-${{ matrix.name }}
-          path: CMakeUserPresets.json
-          retention-days: 7
+          if ctest --list-presets 2>/dev/null | grep -q '"${{ matrix.name }}"'; then
+            echo "preset=${{ matrix.name }}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Configure
         id: configure
-        run: cmake --preset ${{ steps.generate.outputs.cmake }}
+        run: cmake --preset ${{ matrix.name }}
 
       - name: Build
         id: build
-        run: cmake --build --preset ${{ steps.generate.outputs.cmake }}
+        run: cmake --build --preset ${{ matrix.name }}
+
+      - name: Setup GTest
+        id: setup-gtest
+        if: steps.detect-tests.outputs.preset != ''
+        shell: python3 {0}
+        run: |
+          import os
+          test_results_dir = os.path.join(os.environ["GITHUB_WORKSPACE"], "build", "test-results")
+          os.makedirs(test_results_dir, exist_ok=True)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"test-results-dir={test_results_dir}{os.sep}\n")
 
       - name: Test
         id: test
-        if: steps.generate.outputs.ctest != ''
+        if: steps.detect-tests.outputs.preset != ''
         env:
-          GTEST_OUTPUT: xml:${{ steps.generate.outputs.test-results-dir }}
-        run: ctest --preset ${{ steps.generate.outputs.ctest }}
+          GTEST_OUTPUT: xml:${{ steps.setup-gtest.outputs.test-results-dir }}
+        run: ctest --preset ${{ steps.detect-tests.outputs.preset }}
 
       - name: Upload test results
-        if: ${{ !cancelled() && steps.generate.outputs.ctest != '' }}
+        if: ${{ !cancelled() && steps.detect-tests.outputs.preset != '' }}
         uses: actions/upload-artifact@v6
         with:
           name: test-results-${{ matrix.name }}
-          path: ${{ steps.generate.outputs.test-results-dir }}
+          path: ${{ steps.setup-gtest.outputs.test-results-dir }}
           retention-days: 7
 
       - name: Job summary
         if: always()
         shell: bash
         run: |
-          status() { [ "$1" = "success" ] && echo "✅" || ([ "$1" = "skipped" ] && echo "➖" || echo "❌"); }
+          s() { [ "$1" = "success" ] && echo "✅" || ([ "$1" = "skipped" ] && echo "➖" || echo "❌"); }
+          overall="✅"
+          [[ "${{ steps.configure.outcome }}" == "failure" || "${{ steps.build.outcome }}" == "failure" || "${{ steps.test.outcome }}" == "failure" ]] && overall="❌"
           {
-            echo "## ${{ matrix.name }}"
-            echo "| Step | Status |"
-            echo "|------|--------|"
-            echo "| 🔧 Generate preset | $(status ${{ steps.generate.outcome }}) |"
-            echo "| ⚙️ Configure | $(status ${{ steps.configure.outcome }}) |"
-            echo "| 🔨 Build | $(status ${{ steps.build.outcome }}) |"
-            echo "| 🧪 Test | $(status ${{ steps.test.outcome }}) |"
+            echo "<details><summary>${overall} ${{ matrix.name }}</summary>"
             echo ""
-            echo "<details><summary>CMakeUserPresets.json</summary>"
+            echo '```bash'
+            echo "# Download preset (see Generate job summary CMakeUserPresets.json section, if expired):"
+            echo "gh run download ${{ github.run_id }} -n CMakeUserPresets -D ."
+            if [ -n "${{ inputs.opendaq-ref }}" ]; then
+              echo ""
+              echo "# Override openDAQ ref:"
+              echo 'echo "${{ inputs.opendaq-ref }}" > opendaq_ref'
+            fi
             echo ""
-            echo '```json'
-            cat CMakeUserPresets.json 2>/dev/null || echo "Not generated"
+            echo "# $(s ${{ steps.configure.outcome }}) Configure:"
+            echo "cmake --preset ${{ matrix.name }}"
+            echo ""
+            echo "# $(s ${{ steps.build.outcome }}) Build:"
+            echo "cmake --build --preset ${{ matrix.name }}"
+            echo ""
+            if [ "${{ steps.test.outcome }}" = "skipped" ]; then
+              echo "# $(s ${{ steps.test.outcome }}) Test skipped"
+            else
+              echo "# $(s ${{ steps.test.outcome }}) Test:"
+              echo "ctest --preset ${{ matrix.name }}"
+            fi
             echo '```'
             echo ""
             echo "</details>"
